@@ -99,3 +99,57 @@ fn test_mul() {
 
     test_emu_vs_sim(&"mul", Emulator::mul, Simulator::t_mul, &cases);
 }
+
+#[test]
+fn test_divu() {
+    // result = a / b
+    let cases: Vec<(u64, u64, u64)> = [
+        (0xffffffffffffffff, 0, 0),
+        (0xffffffffffffffff, 5678, 0),
+        (1, 1, 1),
+        (2, 2, 1),
+        (5, 10, 2),
+        (1387, 1234567, 890),
+        (1, 0xffffffffffffffff, 0xffffffffffffffff),
+        (0x7fffffffffffffff, 0xffffffffffffffff, 2),
+    ]
+    .to_vec();
+
+    test_emu_vs_sim(&"divu", Emulator::divu, Simulator::t_divu, &cases);
+}
+
+#[test]
+fn test_remu() {
+    // result = a % b
+    let cases: Vec<(u64, u64, u64)> = [
+        (0, 0, 0),
+        (56, 56, 0),
+        (1, 11, 10),
+        (444, 444, 445),
+        (0, 444, 444),
+        (56, 123456, 1234),
+        (0, 0xffffffffffffffff, 0xffffffffffffffff),
+        (0xfffffffffffffffe, 0xfffffffffffffffe, 0xffffffffffffffff),
+        (1, 0xffffffffffffffff, 0xfffffffffffffffe),
+    ]
+    .to_vec();
+
+    test_emu_vs_sim(&"remu", Emulator::remu, Simulator::t_remu, &cases);
+}
+
+#[test]
+fn test_sltu() {
+    // result = a < b
+    let cases: Vec<(u64, u64, u64)> = [
+        (0, 0, 0),
+        (1, 0, 500),
+        (0, 400, 0),
+        (0, 999, 999),
+        (0, 0xffffffffffffffff, 0xffffffffffffffff),
+        (1, 0xfffffffffffffffe, 0xffffffffffffffff),
+        (0, 0xffffffffffffffff, 0xfffffffffffffffe),
+    ]
+    .to_vec();
+
+    test_emu_vs_sim(&"sltu", Emulator::sltu, Simulator::t_sltu, &cases);
+}
