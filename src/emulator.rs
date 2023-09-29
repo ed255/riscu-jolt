@@ -42,13 +42,25 @@ impl Cpu<u64> {
     }
     // `divu rd,rs1,rs2`: `rd = rs1 / rs2; pc = pc + 4` where the values of `rs1` and `rs2` are interpreted as unsigned integers.
     pub fn divu(&mut self, rd: usize, rs1: usize, rs2: usize) {
-        let (result, _) = self.regs[rs1].overflowing_div(self.regs[rs2]);
+        let (result, _) = if self.regs[rs2] == 0 {
+            // From riscv-spec-20191213 section 7.2:
+            // > The quotient of division by zero has all bits set
+            (0xffffffffffffffff, false)
+        } else {
+            self.regs[rs1].overflowing_div(self.regs[rs2])
+        };
         self.regs[rd] = result;
         self.pc = self.pc + 4;
     }
     // `remu rd,rs1,rs2`: `rd = rs1 % rs2; pc = pc + 4` where the values of `rs1` and `rs2` are interpreted as unsigned integers.
     pub fn remu(&mut self, rd: usize, rs1: usize, rs2: usize) {
-        let (result, _) = self.regs[rs1].overflowing_rem(self.regs[rs2]);
+        let (result, _) = if self.regs[rs2] == 0 {
+            // From riscv-spec-20191213 section 7.2:
+            // > the remainder of division by zero equals the dividend
+            (self.regs[rs1], false)
+        } else {
+            self.regs[rs1].overflowing_rem(self.regs[rs2])
+        };
         self.regs[rd] = result;
         self.pc = self.pc + 4;
     }
