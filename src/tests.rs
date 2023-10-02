@@ -1,7 +1,8 @@
 use crate::emulator::Emulator as GenericEmulator;
 use crate::simulator::Simulator;
 
-use ark_bn254::fr::Fr as F;
+use ark_bn254::fr::Fr;
+use ark_ff::{Field, PrimeField};
 
 type Emulator = GenericEmulator<u64>;
 
@@ -17,10 +18,10 @@ fn extend_cases_commutative(cases: &mut Vec<(u64, u64, u64)>) {
 // Test emulator and simulator behaviour against a vector of cases consisting of (result, a, b)
 // where `result = a op b`.  `emu_inst` and `sim_inst` are function pointers to the emulador and
 // simulator implementations of the instruction.
-fn test_emu_vs_sim(
+fn test_emu_vs_sim<F: PrimeField>(
     inst_str: &str,
     emu_inst: fn(&mut Emulator, usize, usize, usize),
-    sim_inst: fn(&mut Simulator, usize, usize, usize),
+    sim_inst: fn(&mut Simulator<F>, usize, usize, usize),
     cases: &Vec<(u64, u64, u64)>,
 ) {
     for (result, a, b) in cases.iter().cloned() {
@@ -61,7 +62,7 @@ fn test_add() {
     ]
     .to_vec();
 
-    test_emu_vs_sim(&"add", Emulator::add, Simulator::t_add, &cases);
+    test_emu_vs_sim::<Fr>(&"add", Emulator::add, Simulator::t_add, &cases);
 }
 
 #[test]
@@ -80,7 +81,7 @@ fn test_sub() {
     ]
     .to_vec();
 
-    test_emu_vs_sim(&"sub", Emulator::sub, Simulator::t_sub, &cases);
+    test_emu_vs_sim::<Fr>(&"sub", Emulator::sub, Simulator::t_sub, &cases);
 }
 
 #[test]
@@ -99,7 +100,7 @@ fn test_mul() {
     ]
     .to_vec();
 
-    test_emu_vs_sim(&"mul", Emulator::mul, Simulator::t_mul, &cases);
+    test_emu_vs_sim::<Fr>(&"mul", Emulator::mul, Simulator::t_mul, &cases);
 }
 
 #[test]
@@ -117,7 +118,7 @@ fn test_divu() {
     ]
     .to_vec();
 
-    test_emu_vs_sim(&"divu", Emulator::divu, Simulator::t_divu, &cases);
+    test_emu_vs_sim::<Fr>(&"divu", Emulator::divu, Simulator::t_divu, &cases);
 }
 
 #[test]
@@ -136,7 +137,7 @@ fn test_remu() {
     ]
     .to_vec();
 
-    test_emu_vs_sim(&"remu", Emulator::remu, Simulator::t_remu, &cases);
+    test_emu_vs_sim::<Fr>(&"remu", Emulator::remu, Simulator::t_remu, &cases);
 }
 
 #[test]
@@ -155,5 +156,5 @@ fn test_sltu() {
     ]
     .to_vec();
 
-    test_emu_vs_sim(&"sltu", Emulator::sltu, Simulator::t_sltu, &cases);
+    test_emu_vs_sim::<Fr>(&"sltu", Emulator::sltu, Simulator::t_sltu, &cases);
 }

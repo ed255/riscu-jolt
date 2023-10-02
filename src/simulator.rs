@@ -2,10 +2,11 @@
 //! implementing the verification of each instruction via Lasso decomposable tables with some small
 //! arithmetic constraints.
 
+use crate::expr::Arithmetic;
 use crate::Registers;
 
-use ark_bn254::fr::Fr;
-use ark_ff::{biginteger::BigInteger, Field, PrimeField};
+use ark_ff::{biginteger::BigInteger, PrimeField};
+use std::marker::PhantomData;
 
 trait ToLeBits {
     type T;
@@ -38,17 +39,67 @@ impl<F: PrimeField> ToLeBits for F {
     }
 }
 
-struct LookupTables {}
+#[derive(Default)]
+struct LookupTables<F: PrimeField> {
+    _marker: PhantomData<F>,
+}
 
-fn f_pow<F: PrimeField>(base: usize, exp: usize) -> F {
-    F::from(base as u64).pow([exp as u64, 0, 0, 0])
+fn f_pow<F: Arithmetic>(base: usize, exp: usize) -> F {
+    let (result, overflow) = (base as u128).overflowing_pow(exp as u32);
+    assert_eq!(overflow, false);
+    F::from(result)
+}
+
+#[derive(Default)]
+struct SubTableMLE<F: Arithmetic> {
+    _marker: PhantomData<F>,
+}
+
+impl<F: Arithmetic> SubTableMLE<F> {
+    fn wp1_to_w(x: &[F]) -> F {
+        let mut result = F::zero();
+        for i in 0..x.len() {
+            result = result + f_pow::<F>(2, i) * &x[i];
+        }
+        result
+    }
+
+    // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
+    // SubTable EQ
+    // Ref Jolt 4.4.1 (4)
+    fn eq_mle(x: &[F], y: &[F]) -> F {
+        assert_eq!(x.len(), y.len());
+        let mut result = F::one();
+        for i in 0..x.len() {
+            result *= x[i].clone() * &y[i] + (F::one() - &x[i]) * (F::one() - &y[i]);
+        }
+        result
+    }
+
+    // Ref Jolt 4.4.2 (5)
+    fn ltu_i_mle(i: usize, x: &[F], y: &[F]) -> F {
+        assert_eq!(x.len(), y.len());
+        (F::one() - &x[i]) * &y[i] * Self::eq_mle(&x[i + 1..], &y[i + 1..])
+    }
+
+    // Evaluate lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
+    // SubTable LTU
+    // Ref Jolt 4.4.2 (6)
+    fn ltu_mle(x: &[F], y: &[F]) -> F {
+        assert_eq!(x.len(), y.len());
+        let mut result = F::zero();
+        for i in 0..x.len() {
+            result += Self::ltu_i_mle(i, x, y);
+        }
+        result
+    }
 }
 
 // Notation:
 // - c: number of chunks
 // - m: subtable size
 // - W: word size (32 for RV32, 64 for RV64)
-impl LookupTables {
+impl<F: PrimeField> LookupTables<F> {
     // Take an input of W+1 bits and return the lowest W bits.  This can be used to remove the
     // overflow bit after an addition.
     // FullTable W+1_to_W
@@ -59,14 +110,6 @@ impl LookupTables {
         let mut result = F::ZERO;
         for i in 0..w {
             result = result + f_pow::<F>(2, i) * src_bits[i as usize];
-        }
-        result
-    }
-
-    fn wp1_to_w_mle<F: PrimeField>(x: &[F]) -> F {
-        let mut result = F::ZERO;
-        for i in 0..x.len() {
-            result = result + f_pow::<F>(2, i) * x[i];
         }
         result
     }
@@ -96,19 +139,7 @@ impl LookupTables {
         for i in 0..w / c {
             let x_i = &x[i * w / c..(i + 1) * w / c];
             let y_i = &y[i * w / c..(i + 1) * w / c];
-            result *= Self::eq_mle(x_i, y_i);
-        }
-        result
-    }
-
-    // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
-    // SubTable EQ
-    // Ref Jolt 4.4.1 (4)
-    fn eq_mle(x: &[F], y: &[F]) -> F {
-        assert_eq!(x.len(), y.len());
-        let mut result = F::ONE;
-        for i in 0..x.len() {
-            result *= x[i] * y[i] + (F::ONE - x[i]) * (F::ONE - y[i]);
+            result *= SubTableMLE::eq_mle(x_i, y_i);
         }
         result
     }
@@ -127,33 +158,15 @@ impl LookupTables {
         for i in (0..c).rev() {
             let x_i = &x[i * (w / c)..(i + 1) * (w / c)];
             let y_i = &y[i * (w / c)..(i + 1) * (w / c)];
-            result += Self::ltu_mle(x_i, y_i) * eq_acc;
-            eq_acc *= Self::eq_mle(x_i, y_i);
-        }
-        result
-    }
-
-    // Ref Jolt 4.4.2 (5)
-    fn ltu_i_mle(i: usize, x: &[F], y: &[F]) -> F {
-        assert_eq!(x.len(), y.len());
-        (F::ONE - x[i]) * y[i] * Self::eq_mle(&x[i + 1..], &y[i + 1..])
-    }
-
-    // Evaluate lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
-    // SubTable LTU
-    // Ref Jolt 4.4.2 (6)
-    fn ltu_mle(x: &[F], y: &[F]) -> F {
-        assert_eq!(x.len(), y.len());
-        let mut result = F::ZERO;
-        for i in 0..x.len() {
-            result += Self::ltu_i_mle(i, x, y);
+            result += SubTableMLE::ltu_mle(x_i, y_i) * eq_acc;
+            eq_acc *= SubTableMLE::eq_mle(x_i, y_i);
         }
         result
     }
 }
 
 #[derive(Default)]
-pub struct Simulator {
+pub struct Simulator<F: PrimeField> {
     pub(crate) pc: F,
     pub(crate) regs: Registers<F>,
     // TODO: Memory simulation
@@ -166,7 +179,7 @@ const W: usize = 64;
 const C: usize = 4;
 
 // Simulated zk circuit instructions with Lasso lookups
-impl Simulator {
+impl<F: PrimeField> Simulator<F> {
     // #### Initialization
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
@@ -191,7 +204,7 @@ impl Simulator {
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::wp1_to_w(W, z);
         self.regs[rd] = result;
-        self.pc = self.pc + F::from(4);
+        self.pc = self.pc + F::from(4u32);
     }
     // `sub rd,rs1,rs2`: `rd = rs1 - rs2; pc = pc + 4`
     pub fn t_sub(&mut self, rd: usize, rs1: usize, rs2: usize) {
@@ -201,7 +214,7 @@ impl Simulator {
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::wp1_to_w(W, z);
         self.regs[rd] = result;
-        self.pc = self.pc + F::from(4);
+        self.pc = self.pc + F::from(4u32);
     }
     // `mul rd,rs1,rs2`: `rd = rs1 * rs2; pc = pc + 4`
     pub fn t_mul(&mut self, rd: usize, rs1: usize, rs2: usize) {
@@ -211,7 +224,7 @@ impl Simulator {
         // MLE. z has 2*W bits.  Take lowest W bits via lookup table
         let result = LookupTables::wx2_to_w(W, z);
         self.regs[rd] = result;
-        self.pc = self.pc + F::from(4);
+        self.pc = self.pc + F::from(4u32);
     }
     // `divu rd,rs1,rs2`: `rd = rs1 / rs2; pc = pc + 4` where the values of `rs1` and `rs2` are
     // interpreted as unsigned integers.
@@ -238,7 +251,7 @@ impl Simulator {
         // Ref: Jolt 5.3, 4.2.2
         let result = LookupTables::ltu(W, C, self.regs[rs1] + f_pow::<F>(2, W) * self.regs[rs2]);
         self.regs[rd] = result;
-        self.pc = self.pc + F::from(4);
+        self.pc = self.pc + F::from(4u32);
     }
     // #### Control
 
