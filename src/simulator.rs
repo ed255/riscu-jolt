@@ -4,7 +4,7 @@
 
 use crate::Registers;
 
-use ark_bn254::fr::Fr as F;
+use ark_bn254::fr::Fr;
 use ark_ff::{biginteger::BigInteger, Field, PrimeField};
 
 trait ToLeBits {
@@ -13,21 +13,21 @@ trait ToLeBits {
     fn to_le_bits(&self) -> Vec<Self::T>;
 }
 
-impl ToLeBits for u64 {
-    type T = u64;
-    fn to_le_bits(&self) -> Vec<Self::T> {
-        let n = 64;
-        let mut result = vec![0u64; n];
-        for i in 0..n {
-            if self & 1 << i != 0 {
-                result[i] = 1;
-            }
-        }
-        result
-    }
-}
+// impl ToLeBits for u64 {
+//     type T = u64;
+//     fn to_le_bits(&self) -> Vec<Self::T> {
+//         let n = 64;
+//         let mut result = vec![0u64; n];
+//         for i in 0..n {
+//             if self & 1 << i != 0 {
+//                 result[i] = 1;
+//             }
+//         }
+//         result
+//     }
+// }
 
-impl ToLeBits for F {
+impl<F: PrimeField> ToLeBits for F {
     type T = F;
     fn to_le_bits(&self) -> Vec<Self::T> {
         self.into_bigint()
@@ -40,7 +40,7 @@ impl ToLeBits for F {
 
 struct LookupTables {}
 
-fn f_pow(base: usize, exp: usize) -> F {
+fn f_pow<F: PrimeField>(base: usize, exp: usize) -> F {
     F::from(base as u64).pow([exp as u64, 0, 0, 0])
 }
 
@@ -51,27 +51,35 @@ fn f_pow(base: usize, exp: usize) -> F {
 impl LookupTables {
     // Take an input of W+1 bits and return the lowest W bits.  This can be used to remove the
     // overflow bit after an addition.
-    // Full Table
+    // FullTable W+1_to_W
     fn wp1_to_w(w: usize, src: F) -> F {
         // src in {0, 1}^{W+1}
         assert!(src.into_bigint().num_bits() as usize <= w + 1);
         let src_bits = src.to_le_bits();
         let mut result = F::ZERO;
         for i in 0..w {
-            result = result + f_pow(2, i) * src_bits[i as usize];
+            result = result + f_pow::<F>(2, i) * src_bits[i as usize];
+        }
+        result
+    }
+
+    fn wp1_to_w_mle<F: PrimeField>(x: &[F]) -> F {
+        let mut result = F::ZERO;
+        for i in 0..x.len() {
+            result = result + f_pow::<F>(2, i) * x[i];
         }
         result
     }
     // Take an input of 2*W bits and return the lowest W bits.  This can be used to remove the
     // overflow bits after a multiplication.
-    // Full Table
+    // FullTable W*2_to_W
     fn wx2_to_w(w: usize, src: F) -> F {
         // src in {0, 1}^{2*W}
         assert!(src.into_bigint().num_bits() as usize <= 2 * w);
         let src_bits = src.to_le_bits();
         let mut result = F::ZERO;
         for i in 0..w {
-            result = result + f_pow(2, i) * src_bits[i as usize];
+            result = result + f_pow::<F>(2, i) * src_bits[i as usize];
         }
         result
     }
@@ -189,7 +197,7 @@ impl Simulator {
     pub fn t_sub(&mut self, rd: usize, rs1: usize, rs2: usize) {
         // Ref: Jolt 5.2
         // Index. z = x + (2^W - y) over the native field
-        let z = self.regs[rs1] + (f_pow(2, W) - self.regs[rs2]);
+        let z = self.regs[rs1] + (f_pow::<F>(2, W) - self.regs[rs2]);
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::wp1_to_w(W, z);
         self.regs[rd] = result;
@@ -228,7 +236,7 @@ impl Simulator {
     // of `rs1` and `rs2` are interpreted as unsigned integers.
     pub fn t_sltu(&mut self, rd: usize, rs1: usize, rs2: usize) {
         // Ref: Jolt 5.3, 4.2.2
-        let result = LookupTables::ltu(W, C, self.regs[rs1] + f_pow(2, W) * self.regs[rs2]);
+        let result = LookupTables::ltu(W, C, self.regs[rs1] + f_pow::<F>(2, W) * self.regs[rs2]);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4);
     }
