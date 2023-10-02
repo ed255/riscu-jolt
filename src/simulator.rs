@@ -47,6 +47,7 @@ fn f_pow(base: usize, exp: usize) -> F {
 // Notation:
 // - c: number of chunks
 // - m: subtable size
+// - W: word size (32 for RV32, 64 for RV64)
 impl LookupTables {
     // Take an input of W+1 bits and return the lowest W bits.  This can be used to remove the
     // overflow bit after an addition.
@@ -74,9 +75,9 @@ impl LookupTables {
         }
         result
     }
-    // Equality between two inputs of size W/c bits.  Outputs 1 if x == y, 0 otherwise.
-    // w: input bit length
-    // Sub Table
+    // Equality comparison between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
+    // FullTable EQ
+    // Ref Jolt 4.4.1
     fn eq(w: usize, c: usize, x_y: F) -> F {
         // x||y in {0, 1}^{2*W}
         assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
@@ -87,24 +88,67 @@ impl LookupTables {
         for i in 0..w / c {
             let x_i = &x[i * w / c..(i + 1) * w / c];
             let y_i = &y[i * w / c..(i + 1) * w / c];
-            result = result * Self::eq_mle(x_i, y_i);
+            result *= Self::eq_mle(x_i, y_i);
         }
         result
     }
 
+    // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
+    // SubTable EQ
+    // Ref Jolt 4.4.1 (4)
     fn eq_mle(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::ONE;
         for i in 0..x.len() {
-            result = result * (x[i] * y[i] + (F::ONE - x[i]) * (F::ONE - y[i]));
+            result *= x[i] * y[i] + (F::ONE - x[i]) * (F::ONE - y[i]);
         }
         result
     }
 
-    fn lt_mle(x: &[F], y: &[F]) {}
+    // Lower than comparison between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
+    // FullTable LTU
+    // Ref Jolt 4.4.2
+    fn ltu(w: usize, c: usize, x_y: F) -> F {
+        // x||y in {0, 1}^{2*W}
+        assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
+        let x_y_bits = x_y.to_le_bits();
+        let x = &x_y_bits[0..w];
+        let y = &x_y_bits[w..2 * w];
+        let mut result = F::ZERO;
+        let mut eq_acc = F::ONE;
+        for i in (0..c).rev() {
+            let x_i = &x[i * (w / c)..(i + 1) * (w / c)];
+            let y_i = &y[i * (w / c)..(i + 1) * (w / c)];
+            result += Self::ltu_mle(x_i, y_i) * eq_acc;
+            eq_acc *= Self::eq_mle(x_i, y_i);
+        }
+        result
+    }
+
+    // Ref Jolt 4.4.2 (5)
+    fn ltu_i_mle(i: usize, x: &[F], y: &[F]) -> F {
+        assert_eq!(x.len(), y.len());
+        (F::ONE - x[i]) * y[i] * Self::eq_mle(&x[i + 1..], &y[i + 1..])
+    }
+
+    // Evaluate lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
+    // SubTable LTU
+    // Ref Jolt 4.4.2 (6)
+    fn ltu_mle(x: &[F], y: &[F]) -> F {
+        assert_eq!(x.len(), y.len());
+        let mut result = F::ZERO;
+        for i in 0..x.len() {
+            result += Self::ltu_i_mle(i, x, y);
+        }
+        result
+    }
 }
 
 pub type Simulator = Cpu<F>;
+
+// TODO, move these two constants to parameters of the object.
+const W: usize = 64;
+const C: usize = 4;
 
 // Simulated zk circuit instructions with Lasso lookups
 impl Cpu<F> {
@@ -130,7 +174,7 @@ impl Cpu<F> {
         // Index. z = x + y over the native field
         let z = self.regs[rs1] + self.regs[rs2];
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
-        let result = LookupTables::wp1_to_w(64, z);
+        let result = LookupTables::wp1_to_w(W, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4);
     }
@@ -138,9 +182,9 @@ impl Cpu<F> {
     pub fn t_sub(&mut self, rd: usize, rs1: usize, rs2: usize) {
         // Ref: Jolt 5.2
         // Index. z = x + (2^W - y) over the native field
-        let z = self.regs[rs1] + (f_pow(2, 64) - self.regs[rs2]);
+        let z = self.regs[rs1] + (f_pow(2, W) - self.regs[rs2]);
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
-        let result = LookupTables::wp1_to_w(64, z);
+        let result = LookupTables::wp1_to_w(W, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4);
     }
@@ -150,41 +194,50 @@ impl Cpu<F> {
         // Index. z = x * y over the native field
         let z = self.regs[rs1] * self.regs[rs2];
         // MLE. z has 2*W bits.  Take lowest W bits via lookup table
-        let result = LookupTables::wx2_to_w(64, z);
+        let result = LookupTables::wx2_to_w(W, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4);
     }
-    // `divu rd,rs1,rs2`: `rd = rs1 / rs2; pc = pc + 4` where the values of `rs1` and `rs2` are interpreted as unsigned integers.
+    // `divu rd,rs1,rs2`: `rd = rs1 / rs2; pc = pc + 4` where the values of `rs1` and `rs2` are
+    // interpreted as unsigned integers.
     pub fn t_divu(&mut self, rd: usize, rs1: usize, rs2: usize) {
         // Ref: Jolt 6.3
         // x = q * y + r
         // where x = rs1, y = rs2, q = rd
         todo!();
     }
-    // `remu rd,rs1,rs2`: `rd = rs1 % rs2; pc = pc + 4` where the values of `rs1` and `rs2` are interpreted as unsigned integers.
+    // `remu rd,rs1,rs2`: `rd = rs1 % rs2; pc = pc + 4` where the values of `rs1` and `rs2` are
+    // interpreted as unsigned integers.
     pub fn t_remu(&mut self, rd: usize, rs1: usize, rs2: usize) {
         // Ref: Jolt 6.3
         // x = q * y + r
         // where x = rs1, y = rs2, r = rd
         todo!();
     }
+
     // #### Comparison
 
-    // `sltu rd,rs1,rs2`: `if (rs1 < rs2) { rd = 1 } else { rd = 0 } pc = pc + 4` where the values of `rs1` and `rs2` are interpreted as unsigned integers.
+    // `sltu rd,rs1,rs2`: `if (rs1 < rs2) { rd = 1 } else { rd = 0 } pc = pc + 4` where the values
+    // of `rs1` and `rs2` are interpreted as unsigned integers.
     pub fn t_sltu(&mut self, rd: usize, rs1: usize, rs2: usize) {
         // Ref: Jolt 5.3, 4.2.2
-        todo!();
+        let result = LookupTables::ltu(W, C, self.regs[rs1] + f_pow(2, W) * self.regs[rs2]);
+        self.regs[rd] = result;
+        self.pc = self.pc + F::from(4);
     }
     // #### Control
 
-    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
+    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with `-2^12 <=
+    // imm < 2^12` and `imm % 2 == 0`
     // TODO
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     // TODO
-    // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
+    // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm
+    // < 2^11`
     // TODO
     // #### System
 
-    // `ecall`: system call number is in `a7`, actual parameters are in `a0-a3`, return value is in `a0`.
+    // `ecall`: system call number is in `a7`, actual parameters are in `a0-a3`, return value is in
+    // `a0`.
     // TODO
 }
