@@ -30,9 +30,3 @@ impl<T> IndexMut<usize> for Registers<T> {
         }
     }
 }
-
-#[derive(Default)]
-pub struct Cpu<T> {
-    pc: T,
-    regs: Registers<T>,
-}

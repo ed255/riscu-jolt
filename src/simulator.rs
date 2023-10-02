@@ -2,7 +2,7 @@
 //! implementing the verification of each instruction via Lasso decomposable tables with some small
 //! arithmetic constraints.
 
-use crate::Cpu;
+use crate::Registers;
 
 use ark_bn254::fr::Fr as F;
 use ark_ff::{biginteger::BigInteger, Field, PrimeField};
@@ -144,14 +144,21 @@ impl LookupTables {
     }
 }
 
-pub type Simulator = Cpu<F>;
+#[derive(Default)]
+pub struct Simulator {
+    pub(crate) pc: F,
+    pub(crate) regs: Registers<F>,
+    // TODO: Memory simulation
+    // TODO: W
+    // TODO: C
+}
 
 // TODO, move these two constants to parameters of the object.
 const W: usize = 64;
 const C: usize = 4;
 
 // Simulated zk circuit instructions with Lasso lookups
-impl Cpu<F> {
+impl Simulator {
     // #### Initialization
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
