@@ -158,3 +158,42 @@ fn test_sltu() {
 
     test_emu_vs_sim::<Fr>(&"sltu", Emulator::sltu, Simulator::t_sltu, &cases);
 }
+
+use crate::expr::{Expr, Var};
+use crate::simulator::SubTableMLE;
+use std::fmt::{self, Display};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct Bit {
+    var: usize,
+    index: usize,
+}
+
+impl Var for Bit {}
+
+const VARS: &str = "xyzabcdefghijklmnopqrstuvw";
+
+impl Display for Bit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        assert!(self.var < VARS.len());
+        write!(f, "{}_{}", &VARS[self.var..self.var + 1], self.index)
+    }
+}
+
+#[test]
+fn test_expr() {
+    let w: usize = 64;
+    let c: usize = 16;
+    let chunk_len = w / c;
+
+    let x: Vec<Expr<Fr, Bit>> = (0..chunk_len)
+        .map(|i| Expr::Var(Bit { var: 0, index: i }))
+        .collect();
+    let y: Vec<Expr<Fr, Bit>> = (0..chunk_len)
+        .map(|i| Expr::Var(Bit { var: 1, index: i }))
+        .collect();
+    let mut eq = SubTableMLE::eq_mle(&x, &y);
+    println!("{}", eq);
+    eq.normalize();
+    println!("{}", eq);
+}

@@ -51,7 +51,7 @@ fn f_pow<F: Arithmetic>(base: usize, exp: usize) -> F {
 }
 
 #[derive(Default)]
-struct SubTableMLE<F: Arithmetic> {
+pub struct SubTableMLE<F: Arithmetic> {
     _marker: PhantomData<F>,
 }
 
@@ -67,7 +67,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
     // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // SubTable EQ
     // Ref Jolt 4.4.1 (4)
-    fn eq_mle(x: &[F], y: &[F]) -> F {
+    pub fn eq_mle(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::one();
         for i in 0..x.len() {
