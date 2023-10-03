@@ -81,8 +81,9 @@ impl Cpu<u64> {
     // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
     pub fn beq(&mut self, rs1: usize, rs2: usize, imm: i64) {
         if self.regs[rs1] == self.regs[rs2] {
-            // TODO: Raising instruction-address-misaligned exception
-            assert!(imm < 2 << 11 && imm >= -(2 << 11));
+            assert!(imm < 2 << 12 && imm >= -(2 << 12));
+            assert_eq!(imm % 2, 0);
+            assert_eq!(imm % 4, 0, "instruction-address-misaligned");
             let pc = self.pc as i128;
             self.pc = (pc + imm as i128) as u64;
         } else {
@@ -91,16 +92,17 @@ impl Cpu<u64> {
     }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     pub fn jal(&mut self, rd: usize, imm: i64) {
-        // TODO: Raising instruction-address-misaligned exception
-        assert!(imm < 2 << 11 && imm >= -(2 << 11));
+        assert!(imm < 2 << 12 && imm >= -(2 << 12));
+        assert_eq!(imm % 2, 0);
+        assert_eq!(imm % 4, 0, "instruction-address-misaligned");
         let pc = self.pc as i128;
         self.pc = (pc + imm as i128) as u64;
         self.regs[rd] = self.pc;
     }
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
     pub fn jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
-        // TODO: Raising instruction-address-misaligned exception
-        assert!(imm < 2 << 11 && imm >= -(2 << 11));
+        assert!(imm < 2 << 12 && imm >= -(2 << 12));
+        assert_eq!(imm % 2, 0);
         let tmp = ((self.regs[rs1] as i128 + imm as i128) / 2) * 2;
         self.regs[rd] = self.pc + 4;
         self.pc = tmp as u64;
