@@ -292,7 +292,11 @@ impl<F: PrimeField, V: Var + Display> Display for Expr<F, V> {
 pub(crate) fn fmt_f<W: Write, F: PrimeField>(f: &mut W, c: &F) -> fmt::Result {
     let c_bi = c.into_bigint();
     let c_bits = c_bi.num_bits();
-    let pow2 = F::from(2u64).pow([c_bits as u64 - 1, 0, 0, 0]);
+    let pow2 = if c_bits == 0 {
+        F::one()
+    } else {
+        F::from(2u64).pow([c_bits as u64 - 1, 0, 0, 0])
+    };
     if c_bits >= 8 && c == &pow2 {
         write!(f, "2^{}", c_bits - 1)
         // TODO: Implement hex format
@@ -398,13 +402,12 @@ impl<F: PrimeField, V: Var + Display> Display for ExprTerms<F, V> {
                 if i != 0 {
                     write!(f, " + ")?;
                 }
-                write!(f, "{}", term.coeff)?;
-            }
-            if term.vars.len() > 0 {
-                write!(f, "*")?;
+                if !term.coeff.is_one() {
+                    write!(f, "{}", term.coeff)?;
+                }
             }
             for (j, var) in term.vars.iter().enumerate() {
-                if j != 0 {
+                if j != 0 || (j == 0 && !term.coeff.is_one()) {
                     write!(f, "*")?;
                 }
                 write!(f, "{}", var.0)?;

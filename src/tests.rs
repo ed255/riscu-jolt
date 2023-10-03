@@ -160,7 +160,7 @@ fn test_sltu() {
 }
 
 use crate::expr::{Expr, Var};
-use crate::simulator::SubTableMLE;
+use crate::simulator::{CombineLookups, SubTableMLE};
 use ark_ff::{biginteger::BigInteger, One, Zero};
 use std::fmt::{self, Display};
 
@@ -182,7 +182,7 @@ impl Display for Bit {
 }
 
 #[test]
-fn test_expr() {
+fn test_mle_expr() {
     let w: usize = 64;
     let c: usize = 16;
     let chunk_len = w / c;
@@ -193,8 +193,55 @@ fn test_expr() {
     let y: Vec<Expr<Fr, Bit>> = (0..chunk_len)
         .map(|i| Expr::Var(Bit { var: 1, index: i }))
         .collect();
-    let mut eq = SubTableMLE::eq_mle(&x, &y);
+    let eq = SubTableMLE::eq_mle(&x, &y);
     println!("{}", eq);
     let terms = eq.normalize();
+    println!("{}", terms);
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct TableEval {
+    table: &'static str,
+    chunk: usize,
+}
+
+impl Var for TableEval {}
+
+impl Display for TableEval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}[r_{}]", self.table, self.chunk)
+    }
+}
+
+#[test]
+fn test_g_expr() {
+    let w: usize = 64;
+    let c: usize = 16;
+    let chunk_len = w / c;
+
+    let evals_ltu: Vec<Expr<Fr, TableEval>> = (0..chunk_len)
+        .map(|i| {
+            Expr::Var(TableEval {
+                table: "LT",
+                chunk: i,
+            })
+        })
+        .collect();
+    let evals_eq: Vec<Expr<Fr, TableEval>> = (0..chunk_len)
+        .map(|i| {
+            Expr::Var(TableEval {
+                table: "EQ",
+                chunk: i,
+            })
+        })
+        .collect();
+    let evals: Vec<Expr<Fr, TableEval>> = evals_ltu
+        .into_iter()
+        .zip(evals_eq.into_iter())
+        .flat_map(|(a, b)| [a, b])
+        .collect();
+    let ltu_g = CombineLookups::ltu(&evals);
+    println!("{}", ltu_g);
+    let terms = ltu_g.normalize();
     println!("{}", terms);
 }

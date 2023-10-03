@@ -66,7 +66,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
 
     // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // SubTable EQ
-    // Ref Jolt 4.4.1 (4)
+    // Ref Jolt 4.2.1 (4)
     pub fn eq_mle(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::one();
@@ -76,7 +76,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
         result
     }
 
-    // Ref Jolt 4.4.2 (5)
+    // Ref Jolt 4.2.2 (5)
     fn ltu_i_mle(i: usize, x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         (F::one() - &x[i]) * &y[i] * Self::eq_mle(&x[i + 1..], &y[i + 1..])
@@ -84,12 +84,36 @@ impl<F: Arithmetic> SubTableMLE<F> {
 
     // Evaluate lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
     // SubTable LTU
-    // Ref Jolt 4.4.2 (6)
+    // Ref Jolt 4.2.2 (6)
     fn ltu_mle(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::zero();
         for i in 0..x.len() {
             result += Self::ltu_i_mle(i, x, y);
+        }
+        result
+    }
+}
+
+#[derive(Default)]
+pub struct CombineLookups<F: Arithmetic> {
+    _marker: PhantomData<F>,
+}
+
+// evals is [T_1[r_1], ..., T_k[r_1],
+//           T_{k+1}[r_2], ..., T_{2k}[r_2],
+//                      ...,
+//           T_{a-k+1}[r_c], ..., T_a[r_c]]
+impl<F: Arithmetic> CombineLookups<F> {
+    pub fn ltu(evals: &[F]) -> F {
+        let c = evals.len() / 2;
+        let evals_ltu = |i| &evals[i * 2];
+        let evals_eq = |i| &evals[i * 2 + 1];
+        let mut result = F::zero();
+        let mut eq_acc = F::one();
+        for i in (0..c).rev() {
+            result += evals_ltu(i).clone() * eq_acc.clone();
+            eq_acc *= evals_eq(i).clone();
         }
         result
     }
@@ -128,7 +152,7 @@ impl<F: PrimeField> LookupTables<F> {
     }
     // Equality comparison between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // FullTable EQ
-    // Ref Jolt 4.4.1
+    // Ref Jolt 4.2.1
     fn eq(w: usize, c: usize, x_y: F) -> F {
         // x||y in {0, 1}^{2*W}
         assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
@@ -146,7 +170,7 @@ impl<F: PrimeField> LookupTables<F> {
 
     // Lower than comparison between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
     // FullTable LTU
-    // Ref Jolt 4.4.2
+    // Ref Jolt 4.2.2
     fn ltu(w: usize, c: usize, x_y: F) -> F {
         // x||y in {0, 1}^{2*W}
         assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
