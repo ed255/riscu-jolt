@@ -36,8 +36,8 @@ fn test_emu_vs_sim(
         sim_inst(&mut sim, 1, 2, 3);
         let r = sim.regs[1];
         assert_eq!(
-            r,
             F::from(result),
+            r,
             "sim {a} {inst_str} {b} = {result} != {r}"
         );
     }
@@ -148,6 +148,8 @@ fn test_sltu() {
         (0, 0xffffffffffffffff, 0xffffffffffffffff),
         (1, 0xfffffffffffffffe, 0xffffffffffffffff),
         (0, 0xffffffffffffffff, 0xfffffffffffffffe),
+        (1, 0x000000000000fffe, 0x000000000000ffff),
+        (0, 0x000000000001fffe, 0x000000000000ffff),
     ]
     .to_vec();
 
