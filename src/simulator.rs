@@ -77,7 +77,7 @@ impl LookupTables {
     }
     // Equality comparison between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // FullTable EQ
-    // Ref Jolt 4.4.1
+    // Ref Jolt 4.2.1
     fn eq(w: usize, c: usize, x_y: F) -> F {
         // x||y in {0, 1}^{2*W}
         assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
@@ -95,7 +95,7 @@ impl LookupTables {
 
     // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // SubTable EQ
-    // Ref Jolt 4.4.1 (4)
+    // Ref Jolt 4.2.1 (4)
     fn eq_mle(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::ONE;
@@ -107,7 +107,7 @@ impl LookupTables {
 
     // Lower than comparison between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
     // FullTable LTU
-    // Ref Jolt 4.4.2
+    // Ref Jolt 4.2.2
     fn ltu(w: usize, c: usize, x_y: F) -> F {
         // x||y in {0, 1}^{2*W}
         assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
@@ -125,7 +125,7 @@ impl LookupTables {
         result
     }
 
-    // Ref Jolt 4.4.2 (5)
+    // Ref Jolt 4.2.2 (5)
     fn ltu_i_mle(i: usize, x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         (F::ONE - x[i]) * y[i] * Self::eq_mle(&x[i + 1..], &y[i + 1..])
@@ -133,7 +133,7 @@ impl LookupTables {
 
     // Evaluate lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
     // SubTable LTU
-    // Ref Jolt 4.4.2 (6)
+    // Ref Jolt 4.2.2 (6)
     fn ltu_mle(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::ZERO;
