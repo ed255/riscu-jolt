@@ -161,6 +161,7 @@ fn test_sltu() {
 
 use crate::expr::{Expr, Var};
 use crate::simulator::SubTableMLE;
+use ark_ff::{biginteger::BigInteger, One, Zero};
 use std::fmt::{self, Display};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -194,6 +195,6 @@ fn test_expr() {
         .collect();
     let mut eq = SubTableMLE::eq_mle(&x, &y);
     println!("{}", eq);
-    eq.normalize();
-    println!("{}", eq);
+    let terms = eq.normalize();
+    println!("{}", terms);
 }
