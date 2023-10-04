@@ -1,7 +1,9 @@
-use crate::emulator::Emulator;
+use crate::emulator::Emulator as GenericEmulator;
 use crate::simulator::Simulator;
 
 use ark_bn254::fr::Fr as F;
+
+type Emulator = GenericEmulator<u64>;
 
 fn extend_cases_commutative(cases: &mut Vec<(u64, u64, u64)>) {
     let commuted: Vec<(u64, u64, u64)> = cases

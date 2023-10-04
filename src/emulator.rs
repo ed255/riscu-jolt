@@ -1,11 +1,16 @@
 //! Implementation of an emulator of RISC-U (RV64I subset)
 
-use crate::Cpu;
+use crate::Registers;
 
-pub type Emulator = Cpu<u64>;
+#[derive(Default)]
+pub struct Emulator<T> {
+    pub(crate) pc: T,
+    pub(crate) regs: Registers<T>,
+    pub(crate) mem: Vec<u8>,
+}
 
 // Emulated instructions
-impl Cpu<u64> {
+impl Emulator<u64> {
     // #### Initialization
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
