@@ -84,15 +84,15 @@ impl Cpu<u64> {
             assert!(imm < 2 << 12 && imm >= -(2 << 12));
             assert_eq!(imm % 2, 0);
             assert_eq!(imm % 4, 0, "instruction-address-misaligned");
-            let pc = self.pc as i128;
-            self.pc = (pc + imm as i128) as u64;
+            let pc = self.pc as i64;
+            self.pc = (pc + imm as i64) as u64;
         } else {
             self.pc = self.pc + 4;
         }
     }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     pub fn jal(&mut self, rd: usize, imm: i64) {
-        assert!(imm < 2 << 12 && imm >= -(2 << 12));
+        assert!(imm < 2 << 20 && imm >= -(2 << 20));
         assert_eq!(imm % 2, 0);
         assert_eq!(imm % 4, 0, "instruction-address-misaligned");
         let pc = self.pc as i128;
