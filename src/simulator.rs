@@ -3,9 +3,11 @@
 //! arithmetic constraints.
 
 use crate::expr::Arithmetic;
+use crate::expr::Var;
 use crate::Registers;
 
 use ark_ff::{biginteger::BigInteger, PrimeField};
+use std::fmt::{self, Display};
 use std::marker::PhantomData;
 
 trait ToLeBits {
@@ -13,20 +15,6 @@ trait ToLeBits {
 
     fn to_le_bits(&self) -> Vec<Self::T>;
 }
-
-// impl ToLeBits for u64 {
-//     type T = u64;
-//     fn to_le_bits(&self) -> Vec<Self::T> {
-//         let n = 64;
-//         let mut result = vec![0u64; n];
-//         for i in 0..n {
-//             if self & 1 << i != 0 {
-//                 result[i] = 1;
-//             }
-//         }
-//         result
-//     }
-// }
 
 impl<F: PrimeField> ToLeBits for F {
     type T = F;
@@ -36,6 +24,39 @@ impl<F: PrimeField> ToLeBits for F {
             .iter()
             .map(|bit| F::from(*bit))
             .collect()
+    }
+}
+
+///! Variable type for MLE expressions
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Bit {
+    pub var: usize,
+    pub index: usize,
+}
+
+impl Var for Bit {}
+
+const VARS: &str = "xyzabcdefghijklmnopqrstuvw";
+
+impl Display for Bit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        assert!(self.var < VARS.len());
+        write!(f, "{}_{}", &VARS[self.var..self.var + 1], self.index)
+    }
+}
+
+///! Variable type for Combine Lookup expressions
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TableEval {
+    pub table: &'static str,
+    pub chunk: usize,
+}
+
+impl Var for TableEval {}
+
+impl Display for TableEval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}[r_{}]", self.table, self.chunk)
     }
 }
 
@@ -67,7 +88,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
     // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // SubTable EQ
     // Ref Jolt 4.2.1 (4)
-    pub fn eq_mle(x: &[F], y: &[F]) -> F {
+    pub fn eq(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::one();
         for i in 0..x.len() {
@@ -77,19 +98,19 @@ impl<F: Arithmetic> SubTableMLE<F> {
     }
 
     // Ref Jolt 4.2.2 (5)
-    fn ltu_i_mle(i: usize, x: &[F], y: &[F]) -> F {
+    fn ltu_i(i: usize, x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
-        (F::one() - &x[i]) * &y[i] * Self::eq_mle(&x[i + 1..], &y[i + 1..])
+        (F::one() - &x[i]) * &y[i] * Self::eq(&x[i + 1..], &y[i + 1..])
     }
 
     // Evaluate lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
     // SubTable LTU
     // Ref Jolt 4.2.2 (6)
-    fn ltu_mle(x: &[F], y: &[F]) -> F {
+    fn ltu(x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
         let mut result = F::zero();
         for i in 0..x.len() {
-            result += Self::ltu_i_mle(i, x, y);
+            result += Self::ltu_i(i, x, y);
         }
         result
     }
@@ -105,6 +126,7 @@ pub struct CombineLookups<F: Arithmetic> {
 //                      ...,
 //           T_{a-k+1}[r_c], ..., T_a[r_c]]
 impl<F: Arithmetic> CombineLookups<F> {
+    // Ref Jolt 4.2.2
     pub fn ltu(evals: &[F]) -> F {
         let c = evals.len() / 2;
         let evals_ltu = |i| &evals[i * 2];
@@ -114,6 +136,16 @@ impl<F: Arithmetic> CombineLookups<F> {
         for i in (0..c).rev() {
             result += evals_ltu(i).clone() * eq_acc.clone();
             eq_acc *= evals_eq(i).clone();
+        }
+        result
+    }
+    // Ref Jolt 4.2.1
+    pub fn eq(evals: &[F]) -> F {
+        let c = evals.len() / 1;
+        let evals_eq = |i| &evals[i];
+        let mut result = F::one();
+        for i in 0..c {
+            result *= evals_eq(i).clone();
         }
         result
     }
@@ -159,13 +191,13 @@ impl<F: PrimeField> LookupTables<F> {
         let x_y_bits = x_y.to_le_bits();
         let x = &x_y_bits[0..w];
         let y = &x_y_bits[w..2 * w];
-        let mut result = F::ZERO;
+        let mut evals = vec![F::ZERO; 1 * c];
         for i in 0..w / c {
             let x_i = &x[i * w / c..(i + 1) * w / c];
             let y_i = &y[i * w / c..(i + 1) * w / c];
-            result *= SubTableMLE::eq_mle(x_i, y_i);
+            evals[i] = SubTableMLE::eq(x_i, y_i);
         }
-        result
+        CombineLookups::eq(&evals)
     }
 
     // Lower than comparison between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
@@ -177,15 +209,14 @@ impl<F: PrimeField> LookupTables<F> {
         let x_y_bits = x_y.to_le_bits();
         let x = &x_y_bits[0..w];
         let y = &x_y_bits[w..2 * w];
-        let mut result = F::ZERO;
-        let mut eq_acc = F::ONE;
-        for i in (0..c).rev() {
+        let mut evals = vec![F::ZERO; 2 * c];
+        for i in 0..c {
             let x_i = &x[i * (w / c)..(i + 1) * (w / c)];
             let y_i = &y[i * (w / c)..(i + 1) * (w / c)];
-            result += SubTableMLE::ltu_mle(x_i, y_i) * eq_acc;
-            eq_acc *= SubTableMLE::eq_mle(x_i, y_i);
+            evals[i * 2] = SubTableMLE::ltu(x_i, y_i);
+            evals[i * 2 + 1] = SubTableMLE::eq(x_i, y_i);
         }
-        result
+        CombineLookups::ltu(&evals)
     }
 }
 

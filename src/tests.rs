@@ -2,7 +2,7 @@ use crate::emulator::Emulator as GenericEmulator;
 use crate::simulator::Simulator;
 
 use ark_bn254::fr::Fr;
-use ark_ff::{Field, PrimeField};
+use ark_ff::PrimeField;
 
 type Emulator = GenericEmulator<u64>;
 
@@ -159,30 +159,11 @@ fn test_sltu() {
     test_emu_vs_sim::<Fr>(&"sltu", Emulator::sltu, Simulator::t_sltu, &cases);
 }
 
-use crate::expr::{Expr, Var};
-use crate::simulator::{CombineLookups, SubTableMLE};
-use ark_ff::{biginteger::BigInteger, One, Zero};
-use std::fmt::{self, Display};
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct Bit {
-    var: usize,
-    index: usize,
-}
-
-impl Var for Bit {}
-
-const VARS: &str = "xyzabcdefghijklmnopqrstuvw";
-
-impl Display for Bit {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        assert!(self.var < VARS.len());
-        write!(f, "{}_{}", &VARS[self.var..self.var + 1], self.index)
-    }
-}
+use crate::expr::Expr;
+use crate::simulator::{Bit, CombineLookups, SubTableMLE, TableEval};
 
 #[test]
-fn test_mle_expr() {
+fn test_mle_eq_expr() {
     let w: usize = 64;
     let c: usize = 16;
     let chunk_len = w / c;
@@ -193,28 +174,14 @@ fn test_mle_expr() {
     let y: Vec<Expr<Fr, Bit>> = (0..chunk_len)
         .map(|i| Expr::Var(Bit { var: 1, index: i }))
         .collect();
-    let eq = SubTableMLE::eq_mle(&x, &y);
+    let eq = SubTableMLE::eq(&x, &y);
     println!("{}", eq);
     let terms = eq.normalize();
     println!("{}", terms);
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct TableEval {
-    table: &'static str,
-    chunk: usize,
-}
-
-impl Var for TableEval {}
-
-impl Display for TableEval {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}[r_{}]", self.table, self.chunk)
-    }
-}
-
 #[test]
-fn test_g_expr() {
+fn test_g_ltu_expr() {
     let w: usize = 64;
     let c: usize = 16;
     let chunk_len = w / c;
