@@ -85,7 +85,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
         result
     }
 
-    // Evaluate equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
+    // Equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // SubTable EQ
     // Ref Jolt 4.2.1 (4)
     pub fn eq(x: &[F], y: &[F]) -> F {
@@ -103,7 +103,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
         (F::one() - &x[i]) * &y[i] * Self::eq(&x[i + 1..], &y[i + 1..])
     }
 
-    // Evaluate lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
+    // Lower than between two n bits inputs.  Outputs 1 if x < y, 0 otherwise.
     // SubTable LTU
     // Ref Jolt 4.2.2 (6)
     fn ltu(x: &[F], y: &[F]) -> F {
@@ -125,6 +125,8 @@ pub struct CombineLookups<F: Arithmetic> {
 //           T_{k+1}[r_2], ..., T_{2k}[r_2],
 //                      ...,
 //           T_{a-k+1}[r_c], ..., T_a[r_c]]
+// These methods are the `g` expressions to combine the evaluations of the subtables into a lookup
+// result.
 impl<F: Arithmetic> CombineLookups<F> {
     // Ref Jolt 4.2.2
     pub fn ltu(evals: &[F]) -> F {

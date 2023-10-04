@@ -162,6 +162,7 @@ fn test_sltu() {
 use crate::expr::Expr;
 use crate::simulator::{Bit, CombineLookups, SubTableMLE, TableEval};
 
+// Print the MLE for EQ
 #[test]
 fn test_mle_eq_expr() {
     let w: usize = 64;
@@ -180,6 +181,7 @@ fn test_mle_eq_expr() {
     println!("{}", terms);
 }
 
+// Print the `g` expression for LTU
 #[test]
 fn test_g_ltu_expr() {
     let w: usize = 64;
