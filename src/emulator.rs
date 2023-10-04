@@ -102,8 +102,8 @@ impl Cpu<u64> {
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
     pub fn jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
         assert!(imm < 2 << 12 && imm >= -(2 << 12));
-        assert_eq!(imm % 2, 0);
         let tmp = ((self.regs[rs1] as i128 + imm as i128) / 2) * 2;
+        assert_eq!(tmp % 4, 0, "instruction-address-misaligned");
         self.regs[rd] = self.pc + 4;
         self.pc = tmp as u64;
     }
