@@ -118,3 +118,51 @@ impl Emulator<u64> {
     // `ecall`: system call number is in `a7`, actual parameters are in `a0-a3`, return value is in `a0`.
     // TODO
 }
+
+pub enum Opcode {
+    // RISC-U supported opcodes
+    Lui,
+    Addi,
+    Ld,
+    Sd,
+    Add,
+    Sub,
+    Mul,
+    Divu,
+    Remu,
+    Sltu,
+    Beq,
+    Jal,
+    Jalr,
+    Ecall,
+}
+
+pub struct Instruction {
+    op: Opcode,
+    rd: usize,
+    rs1: usize,
+    rs2: usize,
+    imm: i64,
+}
+
+#[repr(u32)]
+enum RvOpcode {
+    LUI = 0b0110111,
+    AUIPC = 0b0010111,
+    JAL = 0b1101111,
+    JALR = 0b1100111,
+    // Conditional Branches
+    BRANCH = 0b1100011, // BEQ, BNE, BLT, BGE, BLTU, BGEU
+    LOAD = 0b0000011,   // LB, LH, LW, LBU, LHU
+    STORE = 0b0100011,  // SB, SH, SW
+    // Integer Register-Immediate Instructions
+    OPIMM = 0b0010011, // ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI
+    // Integer Register Register Operations
+    OP = 0b0110011, // ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
+    MISC_MEM = 0b0001111,
+    SYSTEM = 0b1110011, // ECALL, EBREAK, CSR*
+}
+
+pub fn decode(v: u32) -> Instruction {
+    unimplemented!();
+}
