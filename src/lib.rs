@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)] // TODO: Remove this in the future
 mod emulator;
+mod expr;
 mod simulator;
 #[cfg(test)]
 mod tests;
