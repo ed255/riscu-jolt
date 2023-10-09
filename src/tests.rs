@@ -214,36 +214,3 @@ fn test_g_ltu_expr() {
     let terms = ltu_g.normalize();
     println!("{}", terms);
 }
-
-// Test decoder
-
-use crate::emulator::decode;
-
-use elf::abi::PF_X;
-use elf::endian::LittleEndian;
-use elf::note::Note;
-use elf::note::NoteGnuBuildId;
-use elf::section::SectionHeader;
-use elf::ElfBytes;
-
-#[test]
-fn test_decoder() {
-    let path = std::path::PathBuf::from("riscu_examples/c/fibo");
-    let file_data = std::fs::read(path).expect("Could not read file.");
-    let slice = file_data.as_slice();
-    let file = ElfBytes::<LittleEndian>::minimal_parse(slice).expect("Open test1");
-    let entry_point = file.ehdr.e_entry;
-    println!("Entry {:x}", entry_point);
-    let segments = file.segments().expect("Get segments");
-    for segment in segments.iter() {
-        if segment.p_flags & PF_X != 0 {
-            println!("{:?}", segment);
-            let data = file.segment_data(&segment).expect("Get segment data");
-            for bytes in data.chunks(4) {
-                let ins_value = u32::from_le_bytes(bytes.try_into().unwrap());
-                let ins = decode(ins_value);
-                println!("{:?}", ins);
-            }
-        }
-    }
-}
