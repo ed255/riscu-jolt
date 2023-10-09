@@ -10,7 +10,7 @@ make selfie
 ## Build an example source code
 
 ```
-./ext/selfie/selfie -c riscu_examples/c/fibo.c -o riscu_examples/c/fibo -s riscu_examples/c/fibo.s 
+./ext/selfie/selfie -c riscu_examples/c/fibo.c -o riscu_examples/c/fibo.bin -s riscu_examples/c/fibo.s 
 ```
 
 ## Run a risc-u binary under the selfie emulator

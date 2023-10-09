@@ -197,7 +197,7 @@ mod test {
     #[test]
     #[ignore]
     fn test_decoder() {
-        let path = std::path::PathBuf::from("riscu_examples/c/fibo");
+        let path = std::path::PathBuf::from("riscu_examples/c/fibo.bin");
         let file_data = std::fs::read(path).expect("Could not read file.");
         let slice = file_data.as_slice();
         let file = ElfBytes::<LittleEndian>::minimal_parse(slice).expect("Open test1");

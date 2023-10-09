@@ -121,10 +121,9 @@ impl Emulator<u64> {
     // TODO
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub enum Opcode {
     // RISC-U supported opcodes
-    #[default]
     Lui,
     Addi,
     Ld,
@@ -141,7 +140,7 @@ pub enum Opcode {
     Ecall,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Instruction {
     op: Opcode,
     rd: usize,
