@@ -1,0 +1,3 @@
+[submodule "ext/selfie"]
+	path = ext/selfie
+	url = https://github.com/cksystemsteaching/selfie

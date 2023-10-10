@@ -2,6 +2,8 @@
 
 use crate::Registers;
 
+pub mod decoder;
+
 #[derive(Default)]
 pub struct Emulator<T> {
     pub(crate) pc: T,
@@ -117,4 +119,44 @@ impl Emulator<u64> {
 
     // `ecall`: system call number is in `a7`, actual parameters are in `a0-a3`, return value is in `a0`.
     // TODO
+}
+
+#[derive(Debug)]
+pub enum Opcode {
+    // RISC-U supported opcodes
+    Lui,
+    Addi,
+    Ld,
+    Sd,
+    Add,
+    Sub,
+    Mul,
+    Divu,
+    Remu,
+    Sltu,
+    Beq,
+    Jal,
+    Jalr,
+    Ecall,
+}
+
+#[derive(Debug)]
+pub struct Instruction {
+    op: Opcode,
+    rd: usize,
+    rs1: usize,
+    rs2: usize,
+    imm: i64,
+}
+
+impl Instruction {
+    fn new(op: Opcode, rd: usize, rs1: usize, rs2: usize, imm: i64) -> Instruction {
+        Instruction {
+            op,
+            rd,
+            rs1,
+            rs2,
+            imm,
+        }
+    }
 }

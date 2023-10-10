@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 ark-ff = "0.4"
 ark-bn254 = "0.4"
+elf = "0.7.2"
