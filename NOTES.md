@@ -3,6 +3,7 @@
 Build instructions:
 ```
 git submodule init
+git submodule update --init
 cd ext/selfie
 make selfie
 ```
