@@ -150,6 +150,12 @@ impl<T: Default + From<u64>> Emulator<T, RiscvPkMemoryMap> {
     }
 }
 
+const SYSCALL_EXIT: u64 = 93;
+const SYSCALL_READ: u64 = 63;
+const SYSCALL_WRITE: u64 = 64;
+const SYSCALL_OPENAT: u64 = 56;
+const SYSCALL_BRK: u64 = 214;
+
 // Emulated instructions
 impl<M: Memory> Emulator<u64, M> {
     // #### Initialization
@@ -264,24 +270,39 @@ impl<M: Memory> Emulator<u64, M> {
         debug_assert!(imm < 2 << 20 && imm >= -(2 << 20));
         debug_assert_eq!(imm % 2, 0);
         assert_eq!(imm % 4, 0, "instruction-address-misaligned");
-        let pc = self.pc as i64;
-        self.pc = (pc + imm as i64) as u64;
-        self.regs[rd] = self.pc;
+        self.regs[rd] = self.pc + 4;
+        let (pc, _) = (self.pc as i64).overflowing_add(imm);
+        self.pc = pc as u64;
     }
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
     pub fn jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
         debug_assert!(imm < 2 << 12 && imm >= -(2 << 12));
-        let tmp = ((self.regs[rs1] as i64 + imm as i64) / 2) * 2;
+        let (tmp, _) = (self.regs[rs1] as i64).overflowing_add(imm);
+        let tmp = (tmp as u64) & 0xfffffffffffffffe;
         assert_eq!(tmp % 4, 0, "instruction-address-misaligned");
         self.regs[rd] = self.pc + 4;
-        self.pc = tmp as u64;
+        self.pc = tmp;
     }
 
     // #### System
 
     // `ecall`: system call number is in `a7`, actual parameters are in `a0-a3`, return value is in `a0`.
     pub fn ecall(&mut self) {
-        println!("DBG: Skipping unimplemented ecall {}", self.regs[17]);
+        let ecall_num = self.regs[17];
+        match ecall_num {
+            SYSCALL_BRK => {
+                println!("DBG: Skipping unimplemented ecall BRK ");
+            }
+            SYSCALL_EXIT => {
+                panic!(
+                    "Exit ecall with arguments {:?}",
+                    [self.regs[10], self.regs[11], self.regs[12], self.regs[13]]
+                );
+            }
+            _ => {
+                panic!("Unimplemented ecall {}", self.regs[17]);
+            }
+        }
         self.pc = self.pc + 4;
     }
 }
