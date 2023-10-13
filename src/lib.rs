@@ -5,6 +5,7 @@ mod expr;
 pub mod simulator;
 #[cfg(test)]
 mod tests;
+mod utils;
 
 use std::ops::{Index, IndexMut};
 

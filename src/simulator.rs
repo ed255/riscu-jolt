@@ -97,6 +97,40 @@ impl<F: Arithmetic> SubTableMLE<F> {
         result
     }
 
+    fn range_full(x: &[F]) -> F {
+        let mut result = F::zero();
+        for i in 0..x.len() {
+            result += x[i].clone() * f_pow::<F>(2, i);
+        }
+        result
+    }
+
+    fn range_remainder(cutoff: usize, x: &[F]) -> F {
+        let mut result = F::zero();
+        for i in 0..x.len() {
+            if i < cutoff {
+                result += x[i].clone() * f_pow::<F>(2, i);
+            } else {
+                result *= F::one() - x[i].clone();
+            }
+        }
+        result
+    }
+
+    fn range_zeros(x: &[F]) -> F {
+        F::zero()
+    }
+
+    fn range_zero_upper(cutoff: usize, x: &[F]) -> F {
+        let mut result = F::zero();
+        for i in 0..x.len() {
+            if i < cutoff {
+                result += x[i].clone() * f_pow::<F>(2, i);
+            }
+        }
+        result
+    }
+
     // Ref Jolt 4.2.2 (5)
     fn ltu_i(i: usize, x: &[F], y: &[F]) -> F {
         assert_eq!(x.len(), y.len());
@@ -151,6 +185,16 @@ impl<F: Arithmetic> CombineLookups<F> {
         }
         result
     }
+
+    pub fn range(chunk_len: usize, evals: &[F]) -> F {
+        let c = evals.len() / 1;
+        let mut result = F::zero();
+        let base = 2usize.pow(chunk_len as u32);
+        for i in 0..c {
+            result += evals[i].clone() * f_pow::<F>(base, i);
+        }
+        result
+    }
 }
 
 // Notation:
@@ -158,31 +202,52 @@ impl<F: Arithmetic> CombineLookups<F> {
 // - m: subtable size
 // - W: word size (32 for RV32, 64 for RV64)
 impl<F: PrimeField> LookupTables<F> {
-    // Take an input of W+1 bits and return the lowest W bits.  This can be used to remove the
-    // overflow bit after an addition.
-    // FullTable W+1_to_W
-    fn wp1_to_w(w: usize, src: F) -> F {
-        // src in {0, 1}^{W+1}
-        assert!(src.into_bigint().num_bits() as usize <= w + 1);
-        let src_bits = src.to_le_bits();
-        let mut result = F::ZERO;
-        for i in 0..w {
-            result = result + f_pow::<F>(2, i) * src_bits[i as usize];
+    // Take an input of `scr_bits_len` bits and return the lowest `n_bits` bits.  THis effectively
+    // sets to 0 any bit that appears after the first `n_bits` bits.  This can be used to remove
+    // the overflow bit after an addition.
+    // From this we can build FullTable W+1_to_W, W*2_to_W, etc.
+    fn zero_upper_bits(src_bits_len: usize, n_bits: usize, chunk_len: usize, src: F) -> F {
+        assert!(src.into_bigint().num_bits() as usize <= src_bits_len);
+        let src_bits = &src.to_le_bits()[..src_bits_len];
+        // NOTE: If cutoff = 0, then we only need `range_full` and `range_zeros` subtables.
+        let cutoff = n_bits % chunk_len;
+        let mut evals = vec![F::ZERO; src_bits_len.div_ceil(chunk_len)];
+        for (i, src_i) in src_bits.chunks(chunk_len).enumerate() {
+            if i * chunk_len + chunk_len <= n_bits {
+                // n_bits point lands in a higher chunk
+                evals[i] = SubTableMLE::range_full(src_i);
+            } else if i * chunk_len < n_bits && n_bits < (i + 1) * chunk_len {
+                // n_bits point lands in this chunk
+                evals[i] = SubTableMLE::range_zero_upper(cutoff, src_i);
+            } else {
+                // n_bits point lands in a lower chunk
+                evals[i] = SubTableMLE::range_zeros(src_i);
+            }
         }
-        result
+        CombineLookups::range(chunk_len, &evals)
     }
-    // Take an input of 2*W bits and return the lowest W bits.  This can be used to remove the
-    // overflow bits after a multiplication.
-    // FullTable W*2_to_W
-    fn wx2_to_w(w: usize, src: F) -> F {
-        // src in {0, 1}^{2*W}
-        assert!(src.into_bigint().num_bits() as usize <= 2 * w);
+    // Range behaves like the identity from 0 to 2^`n_bits` and as the zero function onwards
+    fn range_nbits(src_bits_len: usize, n_bits: usize, c: usize, src: F) -> F {
+        assert!(src.into_bigint().num_bits() as usize <= src_bits_len);
+        let chunk_len = src_bits_len / c;
         let src_bits = src.to_le_bits();
-        let mut result = F::ZERO;
-        for i in 0..w {
-            result = result + f_pow::<F>(2, i) * src_bits[i as usize];
+        // NOTE: If cutoff = 0, then we only need `range_full` and `range_zeros` subtables.
+        let cutoff = n_bits % (chunk_len);
+        let mut evals = vec![F::ZERO; 1 * c];
+        for i in 0..c {
+            let src_i = &src_bits[i * chunk_len..(i + 1) * chunk_len];
+            if i * chunk_len + chunk_len <= n_bits {
+                // n_bits point lands in a higher chunk
+                evals[i] = SubTableMLE::range_full(src_i);
+            } else if i * chunk_len < n_bits && n_bits < (i + 1) * chunk_len {
+                // n_bits point lands in this chunk
+                evals[i] = SubTableMLE::range_remainder(cutoff, src_i);
+            } else {
+                // n_bits point lands in a lower chunk
+                evals[i] = SubTableMLE::range_zeros(src_i);
+            }
         }
-        result
+        CombineLookups::range(chunk_len, &evals)
     }
     // Equality comparison between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // FullTable EQ
@@ -259,7 +324,8 @@ impl<F: PrimeField> Simulator<F> {
         // Index. z = x + y over the native field
         let z = self.regs[rs1] + self.regs[rs2];
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
-        let result = LookupTables::wp1_to_w(W, z);
+        // let result = LookupTables::wp1_to_w(W, z);
+        let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4u32);
     }
@@ -269,7 +335,8 @@ impl<F: PrimeField> Simulator<F> {
         // Index. z = x + (2^W - y) over the native field
         let z = self.regs[rs1] + (f_pow::<F>(2, W) - self.regs[rs2]);
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
-        let result = LookupTables::wp1_to_w(W, z);
+        // let result = LookupTables::wp1_to_w(W, z);
+        let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4u32);
     }
@@ -279,7 +346,8 @@ impl<F: PrimeField> Simulator<F> {
         // Index. z = x * y over the native field
         let z = self.regs[rs1] * self.regs[rs2];
         // MLE. z has 2*W bits.  Take lowest W bits via lookup table
-        let result = LookupTables::wx2_to_w(W, z);
+        // let result = LookupTables::wx2_to_w(W, z);
+        let result = LookupTables::zero_upper_bits(2 * W, W, W / C, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4u32);
     }
