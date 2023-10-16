@@ -1,12 +1,14 @@
 #![allow(dead_code)]
 #![allow(unused_variables)] // TODO: Remove this in the future
-mod emulator;
+pub mod emulator;
 mod expr;
-mod simulator;
+pub mod simulator;
 #[cfg(test)]
 mod tests;
 
 use std::ops::{Index, IndexMut};
+
+const REG_SP: usize = 2;
 
 #[derive(Default)]
 pub struct Registers<T> {

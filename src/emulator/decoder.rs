@@ -211,7 +211,7 @@ mod test {
                 for bytes in data.chunks(4) {
                     let ins_value = u32::from_le_bytes(bytes.try_into().unwrap());
                     let ins = decode(ins_value);
-                    println!("{:?}", ins);
+                    println!("{:08x} {:?}", ins_value, ins);
                 }
             }
         }
