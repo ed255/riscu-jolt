@@ -305,9 +305,15 @@ impl<F: PrimeField> Simulator<F> {
     // #### Initialization
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
-    // TODO
+    pub fn t_lui(&mut self, rd: usize, imm: F) {
+        // Ref: Jolt 5.5
+        // No lookup required
+        self.regs[rd] = imm;
+        self.pc = self.pc + F::from(4u32);
+    }
     // `addi rd,rs1,imm`: `rd = rs1 + imm; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn t_addi(&mut self, rd: usize, rs1: usize, imm: F) {
+        // Ref: Jolt 5.2 (Same as ADD)
         // Index. z = x + y over the native field
         let z = self.regs[rs1] + imm;
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table

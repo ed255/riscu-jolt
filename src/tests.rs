@@ -39,8 +39,8 @@ fn test_emu_vs_sim<F: PrimeField>(
         sim_inst(&mut sim, 1, 2, 3);
         let r = sim.regs[1];
         assert_eq!(
-            F::from(result),
             r,
+            F::from(result),
             "sim {a} {inst_str} {b} = {result} != {r}"
         );
     }
@@ -191,10 +191,31 @@ fn test_inst_addi() {
         Simulator::t_addi(&mut sim, 1, 2, Fr::from(b));
         let r = sim.regs[1];
         assert_eq!(
-            Fr::from(result),
             r,
+            Fr::from(result),
             "sim {a} {inst_str} {b} = {result} != {r}"
         );
+    }
+}
+
+#[test]
+fn test_inst_lui() {
+    // result = a
+    let cases: Vec<u64> = [0, 1 << 12, 3 << 12, 0b11111111111111111111000000000000].to_vec();
+
+    let inst_str = "lui";
+    for v in cases.iter().cloned() {
+        let v = v as i64;
+        let mut emu = Emulator::default();
+        let mut sim = Simulator::default();
+
+        Emulator::lui(&mut emu, 1, v);
+        let r = emu.regs[1];
+        assert_eq!(r, v as u64, "emu {inst_str} {v} = {v} != {r}");
+
+        Simulator::t_lui(&mut sim, 1, Fr::from(v));
+        let r = sim.regs[1];
+        assert_eq!(r, Fr::from(v as u64), "sim {inst_str} {v} = {v} != {r}");
     }
 }
 
