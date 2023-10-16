@@ -239,7 +239,6 @@ fn test_inst_beq() {
     .to_vec();
 
     let inst_str = "beq";
-    // rd, rs1, imm
     for (pc, old_pc, imm, a, b) in cases.iter().cloned() {
         let mut emu = Emulator::default();
         let mut sim = Simulator::default();
@@ -261,6 +260,83 @@ fn test_inst_beq() {
             r,
             "sim {a} {inst_str} {b} -> pc={pc} != pc={r}"
         );
+    }
+}
+
+#[test]
+fn test_inst_jal() {
+    // pc, old_pc, imm
+    let cases: Vec<(u64, u64, i64)> = [
+        (0x118, 0x100, 0x18),
+        (0x218, 0x200, 0x18),
+        (0x1018, 0x1000, 0x18),
+        (0xe8, 0x100, -0x18),
+        (0x70, 0x100, -0x90),
+        (0xfc, 0x100, -0x04),
+    ]
+    .to_vec();
+
+    let inst_str = "jal";
+    for (pc, old_pc, imm) in cases.iter().cloned() {
+        let mut emu = Emulator::default();
+        let mut sim = Simulator::default();
+
+        emu.pc = old_pc;
+        Emulator::jal(&mut emu, 1, imm);
+        let r = emu.pc;
+        let rd = emu.regs[1];
+        assert_eq!(pc, r, "emu {inst_str} {imm} -> pc={pc} != pc={r}");
+        assert_eq!(old_pc + 4, rd);
+
+        sim.pc = Fr::from(old_pc);
+        Simulator::t_jal(&mut sim, 1, imm);
+        let r = sim.pc;
+        let rd = sim.regs[1];
+        assert_eq!(Fr::from(pc), r, "sim {inst_str} {imm} -> pc={pc} != pc={r}");
+        assert_eq!(Fr::from(old_pc + 4), rd);
+    }
+}
+
+#[test]
+fn test_inst_jalr() {
+    // pc, rs1, imm
+    let cases: Vec<(u64, u64, i64)> = [
+        (0x118, 0x100, 0x18),
+        (0x118, 0x100, 0x19),
+        (0x218, 0x200, 0x18),
+        (0x218, 0x200, 0x19),
+        (0x1018, 0x1000, 0x18),
+        (0x1018, 0x1000, 0x19),
+        (0xe8, 0x100, -0x18),
+        (0xe8, 0x100, -0x17),
+        (0x70, 0x100, -0x90),
+        (0x70, 0x100, -0x8f),
+        (0xfc, 0x100, -0x04),
+        (0xfc, 0x100, -0x03),
+    ]
+    .to_vec();
+
+    let inst_str = "jalr";
+    for (pc, rs1, imm) in cases.iter().cloned() {
+        let old_pc = 0x100;
+        let mut emu = Emulator::default();
+        let mut sim = Simulator::default();
+
+        emu.pc = old_pc;
+        emu.regs[2] = rs1;
+        Emulator::jalr(&mut emu, 1, 2, imm);
+        let r = emu.pc;
+        let rd = emu.regs[1];
+        assert_eq!(pc, r, "emu {inst_str} {imm} -> pc={pc} != pc={r}");
+        assert_eq!(old_pc + 4, rd);
+
+        sim.pc = Fr::from(old_pc);
+        sim.regs[2] = Fr::from(rs1);
+        Simulator::t_jalr(&mut sim, 1, 2, imm);
+        let r = sim.pc;
+        let rd = sim.regs[1];
+        assert_eq!(Fr::from(pc), r, "sim {inst_str} {imm} -> pc={pc} != pc={r}");
+        assert_eq!(Fr::from(old_pc + 4), rd);
     }
 }
 

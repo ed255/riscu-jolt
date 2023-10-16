@@ -259,8 +259,7 @@ impl<M: Memory> Emulator<u64, M> {
             debug_assert!(-(1 << 12) <= imm && imm < 1 << 12);
             debug_assert_eq!(imm % 2, 0);
             assert_eq!(imm % 4, 0, "instruction-address-misaligned");
-            let pc = self.pc as i64;
-            self.pc = (pc + imm as i64) as u64;
+            self.pc = (self.pc as i64 + imm as i64) as u64;
         } else {
             self.pc = self.pc + 4;
         }
@@ -271,8 +270,7 @@ impl<M: Memory> Emulator<u64, M> {
         debug_assert_eq!(imm % 2, 0);
         assert_eq!(imm % 4, 0, "instruction-address-misaligned");
         self.regs[rd] = self.pc + 4;
-        let (pc, _) = (self.pc as i64).overflowing_add(imm);
-        self.pc = pc as u64;
+        self.pc = (self.pc as i64 + imm as i64) as u64;
     }
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
     pub fn jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
