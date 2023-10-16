@@ -47,7 +47,7 @@ fn test_emu_vs_sim<F: PrimeField>(
 }
 
 #[test]
-fn test_add() {
+fn test_inst_add() {
     // result = a + b
     let cases: Vec<(u64, u64, u64)> = [
         (0, 0, 0),
@@ -66,7 +66,7 @@ fn test_add() {
 }
 
 #[test]
-fn test_sub() {
+fn test_inst_sub() {
     // result = a - b
     let cases: Vec<(u64, u64, u64)> = [
         (0, 0, 0),
@@ -85,7 +85,7 @@ fn test_sub() {
 }
 
 #[test]
-fn test_mul() {
+fn test_inst_mul() {
     // result = a * b
     let cases: Vec<(u64, u64, u64)> = [
         (0, 0, 0),
@@ -104,7 +104,7 @@ fn test_mul() {
 }
 
 #[test]
-fn test_divu() {
+fn test_inst_divu() {
     // result = a / b
     let cases: Vec<(u64, u64, u64)> = [
         (0xffffffffffffffff, 0, 0),
@@ -122,7 +122,7 @@ fn test_divu() {
 }
 
 #[test]
-fn test_remu() {
+fn test_inst_remu() {
     // result = a % b
     let cases: Vec<(u64, u64, u64)> = [
         (0, 0, 0),
@@ -141,7 +141,7 @@ fn test_remu() {
 }
 
 #[test]
-fn test_sltu() {
+fn test_inst_sltu() {
     // result = a < b
     let cases: Vec<(u64, u64, u64)> = [
         (0, 0, 0),
@@ -157,6 +157,45 @@ fn test_sltu() {
     .to_vec();
 
     test_emu_vs_sim::<Fr>(&"sltu", Emulator::sltu, Simulator::t_sltu, &cases);
+}
+
+#[test]
+fn test_inst_addi() {
+    // result = a + b
+    let cases: Vec<(u64, u64, u64)> = [
+        (0, 0, 0),
+        (5, 0, 5),
+        (8, 8, 0),
+        (10, 3, 7),
+        (0xffffffffffffffff, 0xffffffffffffffff, 0),
+        (0xffffffffffffffff, 0xfffffffffffffffe, 1),
+        (0, 0xffffffffffffffff, 1),
+        (1, 0xffffffffffffffff, 2),
+        (0xfffffffffffffffe, 0xffffffffffffffff, 0xffffffffffffffff),
+    ]
+    .to_vec();
+
+    let inst_str = "addi";
+    // rd, rs1, imm
+    for (result, a, b) in cases.iter().cloned() {
+        let b = b as i64;
+        let mut emu = Emulator::default();
+        let mut sim = Simulator::default();
+
+        emu.regs[2] = a;
+        Emulator::addi(&mut emu, 1, 2, b);
+        let r = emu.regs[1];
+        assert_eq!(r, result, "emu {a} {inst_str} {b} = {result} != {r}");
+
+        sim.regs[2] = Fr::from(a);
+        Simulator::t_addi(&mut sim, 1, 2, Fr::from(b));
+        let r = sim.regs[1];
+        assert_eq!(
+            Fr::from(result),
+            r,
+            "sim {a} {inst_str} {b} = {result} != {r}"
+        );
+    }
 }
 
 use crate::expr::Expr;

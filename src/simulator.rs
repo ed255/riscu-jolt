@@ -307,7 +307,14 @@ impl<F: PrimeField> Simulator<F> {
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
     // TODO
     // `addi rd,rs1,imm`: `rd = rs1 + imm; pc = pc + 4` with `-2^11 <= imm < 2^11`
-    // TODO
+    pub fn t_addi(&mut self, rd: usize, rs1: usize, imm: F) {
+        // Index. z = x + y over the native field
+        let z = self.regs[rs1] + imm;
+        // MLE. z has W+1 bits.  Take lowest W bits via lookup table
+        let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
+        self.regs[rd] = result;
+        self.pc = self.pc + F::from(4u32);
+    }
 
     // #### Memory
 
@@ -324,7 +331,6 @@ impl<F: PrimeField> Simulator<F> {
         // Index. z = x + y over the native field
         let z = self.regs[rs1] + self.regs[rs2];
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
-        // let result = LookupTables::wp1_to_w(W, z);
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4u32);
@@ -335,7 +341,6 @@ impl<F: PrimeField> Simulator<F> {
         // Index. z = x + (2^W - y) over the native field
         let z = self.regs[rs1] + (f_pow::<F>(2, W) - self.regs[rs2]);
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
-        // let result = LookupTables::wp1_to_w(W, z);
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4u32);
