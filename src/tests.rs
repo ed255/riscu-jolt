@@ -32,15 +32,15 @@ fn test_emu_vs_sim<F: PrimeField>(
         emu.regs[3] = b;
         emu_inst(&mut emu, 1, 2, 3);
         let r = emu.regs[1];
-        assert_eq!(r, result, "emu {a} {inst_str} {b} = {result} != {r}");
+        assert_eq!(result, r, "emu {a} {inst_str} {b} = {result} != {r}");
 
         sim.regs[2] = F::from(a);
         sim.regs[3] = F::from(b);
         sim_inst(&mut sim, 1, 2, 3);
         let r = sim.regs[1];
         assert_eq!(
-            r,
             F::from(result),
+            r,
             "sim {a} {inst_str} {b} = {result} != {r}"
         );
     }
@@ -188,7 +188,7 @@ fn test_inst_addi() {
         assert_eq!(r, result, "emu {a} {inst_str} {b} = {result} != {r}");
 
         sim.regs[2] = Fr::from(a);
-        Simulator::t_addi(&mut sim, 1, 2, Fr::from(b));
+        Simulator::t_addi(&mut sim, 1, 2, b);
         let r = sim.regs[1];
         assert_eq!(
             r,
@@ -211,11 +211,56 @@ fn test_inst_lui() {
 
         Emulator::lui(&mut emu, 1, v);
         let r = emu.regs[1];
-        assert_eq!(r, v as u64, "emu {inst_str} {v} = {v} != {r}");
+        assert_eq!(v as u64, r, "emu {inst_str} {v} = {v} != {r}");
 
-        Simulator::t_lui(&mut sim, 1, Fr::from(v));
+        Simulator::t_lui(&mut sim, 1, v);
         let r = sim.regs[1];
-        assert_eq!(r, Fr::from(v as u64), "sim {inst_str} {v} = {v} != {r}");
+        assert_eq!(Fr::from(v as u64), r, "sim {inst_str} {v} = {v} != {r}");
+    }
+}
+
+#[test]
+fn test_inst_beq() {
+    // pc, old_pc, imm, a == b
+    let cases: Vec<(u64, u64, i64, u64, u64)> = [
+        (0x104, 0x100, 0x18, 0, 1),
+        (0x104, 0x100, 0x18, 1234, 1233),
+        (0x104, 0x100, 0x18, 0xffffffffffffffff, 0xfffffffffffffffe),
+        (0x104, 0x100, -0x18, 0, 1),
+        (0x104, 0x100, -0x90, 1234, 1233),
+        (0x104, 0x100, -0x04, 0xffffffffffffffff, 0xfffffffffffffffe),
+        (0x118, 0x100, 0x18, 0, 0),
+        (0x118, 0x100, 0x18, 1234, 1234),
+        (0x118, 0x100, 0x18, 0xfffffffffffffffe, 0xfffffffffffffffe),
+        (0xe8, 0x100, -0x18, 0, 0),
+        (0x70, 0x100, -0x90, 1234, 1234),
+        (0xfc, 0x100, -0x04, 0xfffffffffffffffe, 0xfffffffffffffffe),
+    ]
+    .to_vec();
+
+    let inst_str = "beq";
+    // rd, rs1, imm
+    for (pc, old_pc, imm, a, b) in cases.iter().cloned() {
+        let mut emu = Emulator::default();
+        let mut sim = Simulator::default();
+
+        emu.pc = old_pc;
+        emu.regs[1] = a;
+        emu.regs[2] = b;
+        Emulator::beq(&mut emu, 1, 2, imm);
+        let r = emu.pc;
+        assert_eq!(pc, r, "emu {a} {inst_str} {b} -> pc={pc} != pc={r}");
+
+        sim.pc = Fr::from(old_pc);
+        sim.regs[1] = Fr::from(a);
+        sim.regs[2] = Fr::from(b);
+        Simulator::t_beq(&mut sim, 1, 2, imm);
+        let r = sim.pc;
+        assert_eq!(
+            Fr::from(pc),
+            r,
+            "sim {a} {inst_str} {b} -> pc={pc} != pc={r}"
+        );
     }
 }
 

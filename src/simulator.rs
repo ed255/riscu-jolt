@@ -259,9 +259,9 @@ impl<F: PrimeField> LookupTables<F> {
         let x = &x_y_bits[0..w];
         let y = &x_y_bits[w..2 * w];
         let mut evals = vec![F::ZERO; 1 * c];
-        for i in 0..w / c {
-            let x_i = &x[i * w / c..(i + 1) * w / c];
-            let y_i = &y[i * w / c..(i + 1) * w / c];
+        for i in 0..c {
+            let x_i = &x[i * (w / c)..(i + 1) * (w / c)];
+            let y_i = &y[i * (w / c)..(i + 1) * (w / c)];
             evals[i] = SubTableMLE::eq(x_i, y_i);
         }
         CombineLookups::eq(&evals)
@@ -300,22 +300,26 @@ pub struct Simulator<F: PrimeField> {
 const W: usize = 64;
 const C: usize = 4;
 
+fn neg<F: Arithmetic>(x: F) -> F {
+    F::one() - x
+}
+
 // Simulated zk circuit instructions with Lasso lookups
 impl<F: PrimeField> Simulator<F> {
     // #### Initialization
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
-    pub fn t_lui(&mut self, rd: usize, imm: F) {
+    pub fn t_lui(&mut self, rd: usize, imm: i64) {
         // Ref: Jolt 5.5
         // No lookup required
-        self.regs[rd] = imm;
+        self.regs[rd] = F::from(imm as u64);
         self.pc = self.pc + F::from(4u32);
     }
     // `addi rd,rs1,imm`: `rd = rs1 + imm; pc = pc + 4` with `-2^11 <= imm < 2^11`
-    pub fn t_addi(&mut self, rd: usize, rs1: usize, imm: F) {
+    pub fn t_addi(&mut self, rd: usize, rs1: usize, imm: i64) {
         // Ref: Jolt 5.2 (Same as ADD)
         // Index. z = x + y over the native field
-        let z = self.regs[rs1] + imm;
+        let z = self.regs[rs1] + F::from(imm as u64);
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         self.regs[rd] = result;
@@ -389,11 +393,25 @@ impl<F: PrimeField> Simulator<F> {
         self.regs[rd] = result;
         self.pc = self.pc + F::from(4u32);
     }
+
     // #### Control
 
     // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with `-2^12 <=
     // imm < 2^12` and `imm % 2 == 0`
-    // TODO
+    pub fn t_beq(&mut self, rs1: usize, rs2: usize, imm: i64) {
+        // Ref: Jolt 5.7
+        let result = LookupTables::eq(W, C, self.regs[rs1] + f_pow::<F>(2, W) * self.regs[rs2]);
+        let (positive, imm) = {
+            if imm >= 0 {
+                (F::one(), F::from(imm as u64))
+            } else {
+                (F::zero(), F::from((-imm) as u64))
+            }
+        };
+        // pc = pc + if eq { imm } else { 4 }
+        self.pc =
+            self.pc + result * (positive * imm - neg(positive) * imm) + neg(result) * F::from(4u32);
+    }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     // TODO
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm
