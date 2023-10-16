@@ -167,7 +167,7 @@ impl<F: PrimeField> LookupTables<F> {
         let src_bits = src.to_le_bits();
         let mut result = F::ZERO;
         for i in 0..w {
-            result = result + f_pow::<F>(2, i) * src_bits[i as usize];
+            result = result + f_pow::<F>(2, i) * src_bits[i];
         }
         result
     }
@@ -180,7 +180,7 @@ impl<F: PrimeField> LookupTables<F> {
         let src_bits = src.to_le_bits();
         let mut result = F::ZERO;
         for i in 0..w {
-            result = result + f_pow::<F>(2, i) * src_bits[i as usize];
+            result = result + f_pow::<F>(2, i) * src_bits[i];
         }
         result
     }
@@ -312,7 +312,7 @@ impl<F: PrimeField> Simulator<F> {
     }
     // #### Control
 
-    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` 
+    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }`
     // with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
     pub fn t_beq(&mut self, rs1: usize, rs2: usize, imm: u32) {
         // Ref: Jolt 5.7
@@ -343,9 +343,11 @@ impl<F: PrimeField> Simulator<F> {
         // MLE. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::wp1_to_w(W, z);
         let tmp = self.regs[rs1] + F::from(imm);
-        // let tmp = (tmp as u64) & 0xfffffffffffffffe;
+        let mut bits_tmp = tmp.into_bigint().to_bits_le();
+        bits_tmp[0] = false;
+        let tmp = F::from_bigint(BigInteger::from_bits_le(&bits_tmp));
         self.regs[rd] = self.pc + F::from(4u32);
-        self.pc = tmp;
+        self.pc = tmp.unwrap();
     }
     // #### System
 
