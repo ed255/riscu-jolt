@@ -312,14 +312,41 @@ impl<F: PrimeField> Simulator<F> {
     }
     // #### Control
 
-    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with `-2^12 <=
-    // imm < 2^12` and `imm % 2 == 0`
-    // TODO
+    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` 
+    // with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
+    pub fn t_beq(&mut self, rs1: usize, rs2: usize, imm: u32) {
+        // Ref: Jolt 5.7
+        // PC is not computed by a lookup
+        // TODO: add opflag to represent the sign of `imm`
+        let condition = LookupTables::eq(W, C, self.regs[rs1] + f_pow::<F>(2, W) * self.regs[rs2]);
+        if condition == F::ONE {
+            self.pc = self.pc + F::from(imm);
+        } else {
+            self.pc = self.pc + F::from(4u32);
+        }
+    }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
-    // TODO
-    // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm
-    // < 2^11`
-    // TODO
+    pub fn t_jal(&mut self, rd: usize, imm: u32) {
+        // Ref: Jolt 5.6
+        let z = self.pc + F::from(imm) + F::from(4u32);
+        // MLE. z has W+1 bits.  Take lowest W bits via lookup table
+        let result = LookupTables::wp1_to_w(W, z);
+        self.regs[rd] = self.pc + F::from(4u32);
+        self.pc = result - F::from(4u32);
+    }
+    // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2;
+    // rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
+    pub fn t_jalr(&mut self, rd: usize, rs1: usize, imm: u32) {
+        // Ref: Jolt 5.6
+        // In the paper, it checks z = pc + imm + 4, but it seems wrong
+        let z = self.regs[rs1] + F::from(imm) + F::from(4u32);
+        // MLE. z has W+1 bits.  Take lowest W bits via lookup table
+        let result = LookupTables::wp1_to_w(W, z);
+        let tmp = self.regs[rs1] + F::from(imm);
+        // let tmp = (tmp as u64) & 0xfffffffffffffffe;
+        self.regs[rd] = self.pc + F::from(4u32);
+        self.pc = tmp;
+    }
     // #### System
 
     // `ecall`: system call number is in `a7`, actual parameters are in `a0-a3`, return value is in
