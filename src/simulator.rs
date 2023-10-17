@@ -77,14 +77,6 @@ pub struct SubTableMLE<F: Arithmetic> {
 }
 
 impl<F: Arithmetic> SubTableMLE<F> {
-    fn wp1_to_w(x: &[F]) -> F {
-        let mut result = F::zero();
-        for i in 0..x.len() {
-            result = result + f_pow::<F>(2, i) * &x[i];
-        }
-        result
-    }
-
     // Equalty between two n bits inputs.  Outputs 1 if x == y, 0 otherwise.
     // SubTable EQ
     // Ref Jolt 4.2.1 (4)
@@ -97,6 +89,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
         result
     }
 
+    // Return the input (identity)
     fn range_full(x: &[F]) -> F {
         let mut result = F::zero();
         for i in 0..x.len() {
@@ -105,6 +98,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
         result
     }
 
+    // Return the input if it uses up to cuttoff bits, or 0 otherwise.
     fn range_remainder(cutoff: usize, x: &[F]) -> F {
         let mut result = F::zero();
         for i in 0..x.len() {
@@ -117,10 +111,12 @@ impl<F: Arithmetic> SubTableMLE<F> {
         result
     }
 
+    // Return always 0.
     fn range_zeros(x: &[F]) -> F {
         F::zero()
     }
 
+    // Return the input with the bits after cuttoff bit set to 0.
     fn range_zero_upper(cutoff: usize, x: &[F]) -> F {
         let mut result = F::zero();
         for i in 0..x.len() {
@@ -131,6 +127,7 @@ impl<F: Arithmetic> SubTableMLE<F> {
         result
     }
 
+    // Return the input with the less significant bit set to 0.
     fn zero_first_bit(x: &[F]) -> F {
         let mut result = F::zero();
         for i in 1..x.len() {
@@ -171,6 +168,7 @@ pub struct CombineLookups<F: Arithmetic> {
 // result.
 impl<F: Arithmetic> CombineLookups<F> {
     // Ref Jolt 4.2.2
+    // LowerThan using LTU and EQ SubTables
     pub fn ltu(evals: &[F]) -> F {
         let c = evals.len() / 2;
         let evals_ltu = |i| &evals[i * 2];
@@ -188,6 +186,7 @@ impl<F: Arithmetic> CombineLookups<F> {
         result
     }
     // Ref Jolt 4.2.1
+    // Equality using EQ SubTable
     pub fn eq(evals: &[F]) -> F {
         let c = evals.len() / 1;
         let evals_eq = |i| &evals[i];
@@ -198,6 +197,11 @@ impl<F: Arithmetic> CombineLookups<F> {
         result
     }
 
+    // Range using doing linear combination of the table evaluations.  Can be used for:
+    // - range check with range_full, range_remainder, range_zeros SubTables
+    // - zero upper bits with range_full, range_zero_upper, range_zeros SubTables
+    // - zero upper bits & zero lower bit with zero_first_bit, range_full, range_zero_upper
+    //   SubTables
     pub fn range(chunk_len: usize, evals: &[F]) -> F {
         let c = evals.len() / 1;
         let mut result = F::zero();
@@ -441,14 +445,15 @@ impl<F: PrimeField> Simulator<F> {
 
     // #### Control
 
-    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with
-    // `-2^12 <= imm < 2^12` and `imm % 2 == 0`
+    // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }`
+    // with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
     pub fn t_beq(&mut self, rs1: usize, rs2: usize, imm: i64) {
         // Ref: Jolt 5.7
         // Index. z = x || y over the native field
         let z = self.regs[rs1] + f_pow::<F>(2, W) * self.regs[rs2];
-        // Lookup
-        let result = LookupTables::eq(W, C, z);
+        // PC is not computed by a lookup
+        let condition = LookupTables::eq(W, C, z);
+        // Simulate the encoding of the instruction from Jolt (where opflag=positive)
         let (positive, imm) = {
             if imm >= 0 {
                 (F::one(), F::from(imm as u64))
@@ -456,35 +461,44 @@ impl<F: PrimeField> Simulator<F> {
                 (F::zero(), F::from((-imm) as u64))
             }
         };
-        // pc = pc + if eq { imm } else { 4 }
-        self.pc =
-            self.pc + result * (positive * imm - neg(positive) * imm) + neg(result) * F::from(4u32);
+        self.pc = self.pc
+            + if condition == F::ONE {
+                if positive == F::ONE {
+                    imm
+                } else {
+                    -imm
+                }
+            } else {
+                F::from(4u32)
+            };
     }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     pub fn t_jal(&mut self, rd: usize, imm: i64) {
         // Ref: Jolt 5.6
-        // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
-        // useful.  The value stored in rd is the old pc + 4, so that we can return back after the
-        // jump.
-        self.regs[rd] = self.pc + F::from(4u32);
         // Index. z = x + y over the native field
         let z = self.pc + F::from(imm as u64);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
-        self.pc = result;
-    }
-    // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm
-    // < 2^11`
-    pub fn t_jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
-        // Ref: Jolt 5.6
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
         // useful.  The value stored in rd is the old pc + 4, so that we can return back after the
         // jump.
         self.regs[rd] = self.pc + F::from(4u32);
+        self.pc = result;
+    }
+    // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2;
+    // rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
+    pub fn t_jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
+        // Ref: Jolt 5.6
+        // Errata: Jolt says it checks z = pc + imm + 4, but it seems wrong because that value is
+        // not used for the new pc nor the new rd, so we skip the `+ 4`.
         // Index. z = x + y over the native field
         let z = self.regs[rs1] + F::from(imm as u64);
-        // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
+        // Lookup. z has W+1 bits.  Take lowest W bits via lookup table, setting bit 0 to 0.
         let result = LookupTables::zero_upper_bits_lower_bit(W + 1, W, W / C, z);
+        // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
+        // useful.  The value stored in rd is the old pc + 4, so that we can return back after the
+        // jump.
+        self.regs[rd] = self.pc + F::from(4u32);
         self.pc = result;
     }
     // #### System
