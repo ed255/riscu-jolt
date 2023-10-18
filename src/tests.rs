@@ -1,4 +1,4 @@
-use crate::emulator::{Emulator as GenericEmulator, NoMem};
+use crate::emulator::{memory::NoMem, Emulator as GenericEmulator};
 use crate::simulator::Simulator;
 
 use ark_bn254::fr::Fr;

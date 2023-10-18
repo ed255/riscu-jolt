@@ -34,3 +34,18 @@ impl<T> IndexMut<usize> for Registers<T> {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum RW {
+    Read = 0,
+    Write = 1,
+}
+
+// Memory operation (read or write)
+#[derive(Debug)]
+pub struct MemOp {
+    addr: u64,
+    t: u64,
+    rw: RW,
+    value: u8,
+}
