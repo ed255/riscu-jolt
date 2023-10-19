@@ -114,16 +114,3 @@ pub struct Step<T, I> {
     pub regs: Registers<T>,
     pub mem_ops: Vec<MemOp>,
 }
-
-/*
-impl<T, I> Step<T, I> {
-    fn into<I2: From<I>>(self) -> Step<T, I2> {
-        Step {
-            pc: self.pc,
-            inst: self.inst.into(),
-            regs: self.regs,
-            mem_ops: self.mem_ops,
-        }
-    }
-}
-*/
