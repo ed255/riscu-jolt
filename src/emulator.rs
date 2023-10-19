@@ -162,13 +162,13 @@ impl<M: Memory> Emulator<u64, M> {
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
     pub fn lui(&mut self, rd: usize, imm: i64) {
-        debug_assert!(imm < 2 << 19 && imm >= -(2 << 19));
+        debug_assert_eq!(imm & ((1 << 12) - 1), 0);
         self.regs[rd] = imm as u64;
         self.pc = self.pc + 4;
     }
     // `addi rd,rs1,imm`: `rd = rs1 + imm; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn addi(&mut self, rd: usize, rs1: usize, imm: i64) {
-        debug_assert!(imm < 2 << 11 && imm >= -(2 << 11));
+        debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
         let (result, _) = self.regs[rs1].overflowing_add(imm as u64);
         self.regs[rd] = result;
         self.pc = self.pc + 4;
@@ -178,7 +178,7 @@ impl<M: Memory> Emulator<u64, M> {
 
     // `ld rd,imm(rs1)`: `rd = memory[rs1 + imm]; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn ld(&mut self, rd: usize, rs1: usize, imm: i64) {
-        debug_assert!(imm < 2 << 11 && imm >= -(2 << 11));
+        debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
         println!(
             "DBG addr={:08x}, rs1={:08x}, imm={}",
@@ -189,7 +189,7 @@ impl<M: Memory> Emulator<u64, M> {
     }
     // `sd rs2,imm(rs1)`: `memory[rs1 + imm] = rs2; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn sd(&mut self, rs1: usize, rs2: usize, imm: i64) {
-        debug_assert!(imm < 2 << 11 && imm >= -(2 << 11));
+        debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
         self.mem.write_u64(addr, self.regs[rs2]);
         self.pc = self.pc + 4;
@@ -256,27 +256,25 @@ impl<M: Memory> Emulator<u64, M> {
     // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
     pub fn beq(&mut self, rs1: usize, rs2: usize, imm: i64) {
         if self.regs[rs1] == self.regs[rs2] {
-            debug_assert!(imm < 2 << 12 && imm >= -(2 << 12));
+            debug_assert!(-(1 << 12) <= imm && imm < 1 << 12);
             debug_assert_eq!(imm % 2, 0);
             assert_eq!(imm % 4, 0, "instruction-address-misaligned");
-            let pc = self.pc as i64;
-            self.pc = (pc + imm as i64) as u64;
+            self.pc = (self.pc as i64 + imm as i64) as u64;
         } else {
             self.pc = self.pc + 4;
         }
     }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     pub fn jal(&mut self, rd: usize, imm: i64) {
-        debug_assert!(imm < 2 << 20 && imm >= -(2 << 20));
+        debug_assert!(-(1 << 20) <= imm && imm < 1 << 20);
         debug_assert_eq!(imm % 2, 0);
         assert_eq!(imm % 4, 0, "instruction-address-misaligned");
         self.regs[rd] = self.pc + 4;
-        let (pc, _) = (self.pc as i64).overflowing_add(imm);
-        self.pc = pc as u64;
+        self.pc = (self.pc as i64 + imm as i64) as u64;
     }
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
     pub fn jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
-        debug_assert!(imm < 2 << 12 && imm >= -(2 << 12));
+        debug_assert!(-(1 << 12) <= imm && imm < 1 << 12);
         let (tmp, _) = (self.regs[rs1] as i64).overflowing_add(imm);
         let tmp = (tmp as u64) & 0xfffffffffffffffe;
         assert_eq!(tmp % 4, 0, "instruction-address-misaligned");
