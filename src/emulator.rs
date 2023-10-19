@@ -3,10 +3,11 @@
 pub mod decoder;
 pub mod memory;
 
+use crate::MemOp;
 use crate::Registers;
 use crate::REG_SP;
 use decoder::decode;
-use memory::Memory;
+use memory::{Memory, MemoryTracer};
 
 #[derive(Default)]
 pub struct Emulator<T, M: Memory> {
@@ -27,6 +28,21 @@ impl<T: Default + From<u64>, M: Memory> Emulator<T, M> {
         emu.pc = entry_point.into();
         emu.regs[REG_SP] = sp.into();
         emu
+    }
+}
+
+#[derive(Debug)]
+pub struct Step<T> {
+    pub pc: T,
+    pub inst: Instruction,
+    pub regs: Registers<T>,
+    pub mem_ops: Vec<MemOp>,
+}
+
+impl<T: Default + From<u64>, M: Memory> Emulator<T, MemoryTracer<M>> {
+    pub fn new_tracer(mem: M) -> Self {
+        let mem = MemoryTracer::new(mem);
+        Self::new(mem)
     }
 }
 
@@ -60,10 +76,7 @@ impl<M: Memory> Emulator<u64, M> {
     pub fn ld(&mut self, rd: usize, rs1: usize, imm: i64) {
         debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
-        println!(
-            "DBG addr={:08x}, rs1={:08x}, imm={}",
-            addr, self.regs[rs1], imm
-        );
+        assert!(addr % 8 == 0, "load-address-misaligned");
         self.regs[rd] = self.mem.read_u64(addr);
         self.pc = self.pc + 4;
     }
@@ -71,6 +84,7 @@ impl<M: Memory> Emulator<u64, M> {
     pub fn sd(&mut self, rs1: usize, rs2: usize, imm: i64) {
         debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
+        assert!(addr % 8 == 0, "store-address-misaligned");
         self.mem.write_u64(addr, self.regs[rs2]);
         self.pc = self.pc + 4;
     }
@@ -186,7 +200,7 @@ impl<M: Memory> Emulator<u64, M> {
 }
 
 impl<M: Memory> Emulator<u64, M> {
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> Instruction {
         use Opcode::*;
         // Fetch
         let inst_u32 = self.mem.read_u32(self.pc);
@@ -198,7 +212,7 @@ impl<M: Memory> Emulator<u64, M> {
             rs1,
             rs2,
             imm,
-        } = inst;
+        } = inst.clone();
         // Execute
         match op {
             Lui => self.lui(rd, imm),
@@ -216,10 +230,29 @@ impl<M: Memory> Emulator<u64, M> {
             Jalr => self.jalr(rd, rs1, imm),
             Ecall => self.ecall(),
         }
+        inst
     }
 }
 
-#[derive(Debug)]
+impl<M: Memory> Emulator<u64, MemoryTracer<M>> {
+    pub fn step_trace(&mut self) -> Step<u64> {
+        let pc = self.pc;
+        let regs = self.regs.clone();
+        let inst = self.step();
+        // The memory trace contains 4 entries for fetching the instruction (32 bits) and optionally more entries
+        // from load / store instruction
+        let mem_ops = self.mem.trace[4..].into();
+        self.mem.trace.clear();
+        Step {
+            inst,
+            pc,
+            regs,
+            mem_ops,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Opcode {
     // RISC-U supported opcodes
     Lui,
@@ -238,7 +271,7 @@ pub enum Opcode {
     Ecall,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Instruction {
     op: Opcode,
     rd: usize,

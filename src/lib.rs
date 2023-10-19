@@ -11,7 +11,7 @@ use std::ops::{Index, IndexMut};
 
 const REG_SP: usize = 2;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct Registers<T> {
     r: [T; 32],
     zero: T,
@@ -35,14 +35,14 @@ impl<T> IndexMut<usize> for Registers<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RW {
     Read = 0,
     Write = 1,
 }
 
 // Memory operation (read or write)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MemOp {
     addr: u64,
     t: u64,

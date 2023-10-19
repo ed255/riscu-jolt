@@ -1,9 +1,5 @@
 use riscu::emulator::decoder::decode;
-use riscu::emulator::{
-    memory::Memory,
-    memory::{MemoryTracer, RiscvPkMemoryMap},
-    Emulator,
-};
+use riscu::emulator::{memory::Memory, memory::RiscvPkMemoryMap, Emulator};
 
 use elf::endian::LittleEndian;
 use elf::ElfBytes;
@@ -47,8 +43,7 @@ fn main() -> Result<(), pico_args::Error> {
     let file = ElfBytes::<LittleEndian>::minimal_parse(slice).expect("Open test1");
     // 1 MiB memory
     let mem = RiscvPkMemoryMap::new_load_from_elf(1 * 1024 * 1024, &file);
-    let mem = MemoryTracer::new(mem);
-    let mut emu = Emulator::<u64, _>::new(mem);
+    let mut emu = Emulator::<u64, _>::new_tracer(mem);
     let mut t: u64 = 0;
     loop {
         if args.debug >= 2 {
@@ -67,12 +62,13 @@ fn main() -> Result<(), pico_args::Error> {
             let inst = decode(inst_u32);
             println!("t={:05} 0x{:06x} {:08x} {:?}", t, emu.pc, inst_u32, inst);
         }
-        if t == 00238 {
-            for mem_op in &emu.mem.trace {
-                println!("{:?}", mem_op);
-            }
-        }
-        emu.step();
+        // if t == 00238 {
+        //     for mem_op in &emu.mem.trace {
+        //         println!("{:?}", mem_op);
+        //     }
+        // }
+        let step = emu.step_trace();
+        println!("{:?}", step);
         t += 1;
     }
 }
