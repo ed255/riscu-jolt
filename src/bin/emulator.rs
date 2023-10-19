@@ -1,5 +1,12 @@
 use riscu::emulator::decoder::decode;
 use riscu::emulator::{memory::Memory, memory::RiscvPkMemoryMap, Emulator};
+use riscu::simulator::{JoltInstruction, Simulator};
+use riscu::{Instruction, Opcode, Step as GenericStep};
+
+use ark_bn254::fr::Fr;
+
+type JoltStep<F> = GenericStep<F, JoltInstruction>;
+type EmuStep = GenericStep<u64, Instruction>;
 
 use elf::endian::LittleEndian;
 use elf::ElfBytes;
@@ -19,6 +26,7 @@ ARGS:
 
 #[derive(Debug)]
 struct AppArgs {
+    simulate: bool,
     debug: usize,
     elf_path: std::path::PathBuf,
 }
@@ -30,6 +38,7 @@ fn main() -> Result<(), pico_args::Error> {
         std::process::exit(0);
     }
     let args = AppArgs {
+        simulate: pargs.contains("--sim"),
         debug: pargs.opt_value_from_str("--debug")?.unwrap_or(0),
         elf_path: pargs.free_from_str()?,
     };
@@ -46,29 +55,45 @@ fn main() -> Result<(), pico_args::Error> {
     let mut emu = Emulator::<u64, _>::new_tracer(mem);
     let mut t: u64 = 0;
     loop {
-        if args.debug >= 2 {
-            for i in 0..10 {
-                print!("{:06x} ", emu.regs[i]);
-            }
-            println!("");
-            for i in 10..20 {
-                print!("{:06x} ", emu.regs[i]);
-            }
-            println!("");
-        }
         if args.debug >= 1 {
             let inst_u32 = emu.mem.read_u32(emu.pc);
             // Decode
             let inst = decode(inst_u32);
             println!("t={:05} 0x{:06x} {:08x} {:?}", t, emu.pc, inst_u32, inst);
         }
-        // if t == 00238 {
-        //     for mem_op in &emu.mem.trace {
-        //         println!("{:?}", mem_op);
-        //     }
-        // }
         let step = emu.step_trace();
-        println!("{:?}", step);
+        if args.debug >= 2 {
+            println!("{:?}", step);
+        }
+        if args.simulate {
+            let step_next = EmuStep {
+                pc: emu.pc,
+                inst: Instruction::default(),
+                regs: emu.regs.clone(),
+                mem_ops: Vec::new(),
+            };
+            let step: JoltStep<Fr> = step.into();
+            let step_next: JoltStep<Fr> = step_next.into();
+            // TODO: Replace this by the step simulation once it's implemented:
+            // https://github.com/ed255/riscu-jolt/issues/6
+            use Opcode::*;
+            match step.inst.op {
+                Lui => Simulator::t_lui(&step, &step_next),
+                Addi => Simulator::t_addi(&step, &step_next),
+                Ld => Simulator::t_ld(&step, &step_next),
+                Sd => Simulator::t_sd(&step, &step_next),
+                Add => Simulator::t_add(&step, &step_next),
+                Sub => Simulator::t_sub(&step, &step_next),
+                Mul => Simulator::t_mul(&step, &step_next),
+                Divu => Simulator::t_divu(&step, &step_next),
+                Remu => Simulator::t_remu(&step, &step_next),
+                Sltu => Simulator::t_sltu(&step, &step_next),
+                Beq => Simulator::t_beq(&step, &step_next),
+                Jal => Simulator::t_jal(&step, &step_next),
+                Jalr => Simulator::t_jalr(&step, &step_next),
+                Ecall => Simulator::t_ecall(&step, &step_next),
+            }
+        }
         t += 1;
     }
 }

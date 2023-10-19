@@ -200,3 +200,17 @@ impl<M: Memory> Memory for MemoryTracer<M> {
         self.mem.entry_point()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_new_load_from_elf() {
+        let path = std::path::PathBuf::from("riscu_examples/c/fibo.bin");
+        let file_data = std::fs::read(path).expect("Could not read file.");
+        let slice = file_data.as_slice();
+        let file = ElfBytes::<LittleEndian>::minimal_parse(slice).expect("Open test1");
+        let mem = RiscvPkMemoryMap::new_load_from_elf(1024 * 1024, &file);
+    }
+}

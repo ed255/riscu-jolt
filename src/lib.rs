@@ -7,6 +7,7 @@ pub mod simulator;
 mod tests;
 mod utils;
 
+use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
 
 const REG_SP: usize = 2;
@@ -15,6 +16,15 @@ const REG_SP: usize = 2;
 pub struct Registers<T> {
     r: [T; 32],
     zero: T,
+}
+
+impl Registers<u64> {
+    pub fn into_f<F: From<u64>>(self) -> Registers<F> {
+        Registers {
+            r: self.r.map(|v| F::from(v)),
+            zero: F::from(self.zero),
+        }
+    }
 }
 
 impl<T> Index<usize> for Registers<T> {
@@ -49,3 +59,71 @@ pub struct MemOp {
     rw: RW,
     value: u8,
 }
+
+#[derive(Default, Debug, Clone, Copy)]
+pub enum Opcode {
+    // RISC-U supported opcodes
+    Lui,
+    Addi,
+    Ld,
+    Sd,
+    #[default]
+    Add,
+    Sub,
+    Mul,
+    Divu,
+    Remu,
+    Sltu,
+    Beq,
+    Jal,
+    Jalr,
+    Ecall,
+}
+
+impl Display for Opcode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct Instruction {
+    pub op: Opcode,
+    rd: usize,
+    rs1: usize,
+    rs2: usize,
+    imm: i64,
+}
+
+impl Instruction {
+    fn new(op: Opcode, rd: usize, rs1: usize, rs2: usize, imm: i64) -> Self {
+        Instruction {
+            op,
+            rd,
+            rs1,
+            rs2,
+            imm,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Step<T, I> {
+    pub pc: T,
+    pub inst: I,
+    pub regs: Registers<T>,
+    pub mem_ops: Vec<MemOp>,
+}
+
+/*
+impl<T, I> Step<T, I> {
+    fn into<I2: From<I>>(self) -> Step<T, I2> {
+        Step {
+            pc: self.pc,
+            inst: self.inst.into(),
+            regs: self.regs,
+            mem_ops: self.mem_ops,
+        }
+    }
+}
+*/

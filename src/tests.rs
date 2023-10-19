@@ -1,10 +1,21 @@
-use crate::emulator::{memory::NoMem, Emulator as GenericEmulator};
-use crate::simulator::Simulator;
+use crate::emulator::{
+    memory::{MemoryTracer, NoMem},
+    Emulator as GenericEmulator,
+};
+use crate::simulator::{JoltInstruction, Simulator};
+use crate::Step as GenericStep;
+use crate::{Instruction, Opcode};
 
 use ark_bn254::fr::Fr;
 use ark_ff::PrimeField;
 
-type Emulator = GenericEmulator<u64, NoMem>;
+type Emulator = GenericEmulator<u64, MemoryTracer<NoMem>>;
+type EmuStep<F> = GenericStep<F, Instruction>;
+type JoltStep<F> = GenericStep<F, JoltInstruction>;
+
+fn new_emu() -> Emulator {
+    Emulator::new(MemoryTracer::new(NoMem::default()))
+}
 
 fn extend_cases_commutative(cases: &mut Vec<(u64, u64, u64)>) {
     let commuted: Vec<(u64, u64, u64)> = cases
@@ -19,30 +30,22 @@ fn extend_cases_commutative(cases: &mut Vec<(u64, u64, u64)>) {
 // where `result = a op b`.  `emu_inst` and `sim_inst` are function pointers to the emulador and
 // simulator implementations of the instruction.
 fn test_emu_vs_sim<F: PrimeField>(
-    inst_str: &str,
-    emu_inst: fn(&mut Emulator, usize, usize, usize),
-    sim_inst: fn(&mut Simulator<F>, usize, usize, usize),
+    op: Opcode,
+    sim_inst: fn(&JoltStep<F>, &JoltStep<F>),
     cases: &Vec<(u64, u64, u64)>,
 ) {
     for (result, a, b) in cases.iter().cloned() {
-        let mut emu = Emulator::default();
-        let mut sim = Simulator::default();
+        let mut emu = new_emu();
 
         emu.regs[2] = a;
         emu.regs[3] = b;
-        emu_inst(&mut emu, 1, 2, 3);
+        let step = emu.exec_trace(Instruction::new(op, 1, 2, 3, 0));
         let r = emu.regs[1];
-        assert_eq!(result, r, "emu {a} {inst_str} {b} = {result} != {r}");
+        assert_eq!(result, r, "emu {a} {op} {b} = {result} != {r}");
+        // Next instruction is a NOP
+        let step_next = emu.exec_trace(Instruction::new(Opcode::Add, 0, 0, 0, 0));
 
-        sim.regs[2] = F::from(a);
-        sim.regs[3] = F::from(b);
-        sim_inst(&mut sim, 1, 2, 3);
-        let r = sim.regs[1];
-        assert_eq!(
-            F::from(result),
-            r,
-            "sim {a} {inst_str} {b} = {result} != {r}"
-        );
+        sim_inst(&step.into(), &step_next.into());
     }
 }
 
@@ -62,7 +65,7 @@ fn test_inst_add() {
     ]
     .to_vec();
 
-    test_emu_vs_sim::<Fr>(&"add", Emulator::add, Simulator::t_add, &cases);
+    test_emu_vs_sim::<Fr>(Opcode::Add, Simulator::t_add, &cases);
 }
 
 #[test]
@@ -81,7 +84,7 @@ fn test_inst_sub() {
     ]
     .to_vec();
 
-    test_emu_vs_sim::<Fr>(&"sub", Emulator::sub, Simulator::t_sub, &cases);
+    test_emu_vs_sim::<Fr>(Opcode::Sub, Simulator::t_sub, &cases);
 }
 
 #[test]
@@ -100,7 +103,7 @@ fn test_inst_mul() {
     ]
     .to_vec();
 
-    test_emu_vs_sim::<Fr>(&"mul", Emulator::mul, Simulator::t_mul, &cases);
+    test_emu_vs_sim::<Fr>(Opcode::Mul, Simulator::t_mul, &cases);
 }
 
 #[test]
@@ -118,7 +121,7 @@ fn test_inst_divu() {
     ]
     .to_vec();
 
-    test_emu_vs_sim::<Fr>(&"divu", Emulator::divu, Simulator::t_divu, &cases);
+    test_emu_vs_sim::<Fr>(Opcode::Divu, Simulator::t_divu, &cases);
 }
 
 #[test]
@@ -137,7 +140,7 @@ fn test_inst_remu() {
     ]
     .to_vec();
 
-    test_emu_vs_sim::<Fr>(&"remu", Emulator::remu, Simulator::t_remu, &cases);
+    test_emu_vs_sim::<Fr>(Opcode::Remu, Simulator::t_remu, &cases);
 }
 
 #[test]
@@ -156,7 +159,7 @@ fn test_inst_sltu() {
     ]
     .to_vec();
 
-    test_emu_vs_sim::<Fr>(&"sltu", Emulator::sltu, Simulator::t_sltu, &cases);
+    test_emu_vs_sim::<Fr>(Opcode::Sltu, Simulator::t_sltu, &cases);
 }
 
 #[test]
@@ -175,26 +178,20 @@ fn test_inst_addi() {
     ]
     .to_vec();
 
-    let inst_str = "addi";
+    let op = Opcode::Addi;
     // rd, rs1, imm
     for (result, a, b) in cases.iter().cloned() {
         let b = b as i64;
-        let mut emu = Emulator::default();
-        let mut sim = Simulator::default();
+        let mut emu = new_emu();
 
         emu.regs[2] = a;
-        Emulator::addi(&mut emu, 1, 2, b);
+        let step = emu.exec_trace(Instruction::new(op, 1, 2, 0, b));
         let r = emu.regs[1];
-        assert_eq!(r, result, "emu {a} {inst_str} {b} = {result} != {r}");
+        assert_eq!(r, result, "emu {a} {op} {b} = {result} != {r}");
+        // Next instruction is a NOP
+        let step_next = emu.exec_trace(Instruction::new(Opcode::Add, 0, 0, 0, 0));
 
-        sim.regs[2] = Fr::from(a);
-        Simulator::t_addi(&mut sim, 1, 2, b);
-        let r = sim.regs[1];
-        assert_eq!(
-            r,
-            Fr::from(result),
-            "sim {a} {inst_str} {b} = {result} != {r}"
-        );
+        Simulator::<Fr>::t_addi(&step.into(), &step_next.into());
     }
 }
 
@@ -203,19 +200,18 @@ fn test_inst_lui() {
     // result = a
     let cases: Vec<u64> = [0, 1 << 12, 3 << 12, 0b11111111111111111111000000000000].to_vec();
 
-    let inst_str = "lui";
+    let op = Opcode::Lui;
     for v in cases.iter().cloned() {
         let v = v as i64;
-        let mut emu = Emulator::default();
-        let mut sim = Simulator::default();
+        let mut emu = new_emu();
 
-        Emulator::lui(&mut emu, 1, v);
+        let step = emu.exec_trace(Instruction::new(op, 1, 0, 0, v));
         let r = emu.regs[1];
-        assert_eq!(v as u64, r, "emu {inst_str} {v} = {v} != {r}");
+        assert_eq!(v as u64, r, "emu {op} {v} = {v} != {r}");
+        // Next instruction is a NOP
+        let step_next = emu.exec_trace(Instruction::new(Opcode::Add, 0, 0, 0, 0));
 
-        Simulator::t_lui(&mut sim, 1, v);
-        let r = sim.regs[1];
-        assert_eq!(Fr::from(v as u64), r, "sim {inst_str} {v} = {v} != {r}");
+        Simulator::<Fr>::t_lui(&step.into(), &step_next.into());
     }
 }
 
@@ -238,28 +234,20 @@ fn test_inst_beq() {
     ]
     .to_vec();
 
-    let inst_str = "beq";
+    let op = Opcode::Beq;
     for (pc, old_pc, imm, a, b) in cases.iter().cloned() {
-        let mut emu = Emulator::default();
-        let mut sim = Simulator::default();
+        let mut emu = new_emu();
 
         emu.pc = old_pc;
         emu.regs[1] = a;
         emu.regs[2] = b;
-        Emulator::beq(&mut emu, 1, 2, imm);
+        let step = emu.exec_trace(Instruction::new(op, 0, 1, 2, imm));
         let r = emu.pc;
-        assert_eq!(pc, r, "emu {a} {inst_str} {b} -> pc={pc} != pc={r}");
+        assert_eq!(pc, r, "emu {a} {op} {b} -> pc={pc} != pc={r}");
+        // Next instruction is a NOP
+        let step_next = emu.exec_trace(Instruction::new(Opcode::Add, 0, 0, 0, 0));
 
-        sim.pc = Fr::from(old_pc);
-        sim.regs[1] = Fr::from(a);
-        sim.regs[2] = Fr::from(b);
-        Simulator::t_beq(&mut sim, 1, 2, imm);
-        let r = sim.pc;
-        assert_eq!(
-            Fr::from(pc),
-            r,
-            "sim {a} {inst_str} {b} -> pc={pc} != pc={r}"
-        );
+        Simulator::<Fr>::t_beq(&step.into(), &step_next.into());
     }
 }
 
@@ -276,24 +264,20 @@ fn test_inst_jal() {
     ]
     .to_vec();
 
-    let inst_str = "jal";
+    let op = Opcode::Jal;
     for (pc, old_pc, imm) in cases.iter().cloned() {
-        let mut emu = Emulator::default();
-        let mut sim = Simulator::default();
+        let mut emu = new_emu();
 
         emu.pc = old_pc;
-        Emulator::jal(&mut emu, 1, imm);
+        let step = emu.exec_trace(Instruction::new(op, 1, 0, 0, imm));
         let r = emu.pc;
         let rd = emu.regs[1];
-        assert_eq!(pc, r, "emu {inst_str} {imm} -> pc={pc} != pc={r}");
+        assert_eq!(pc, r, "emu {op} {imm} -> pc={pc} != pc={r}");
         assert_eq!(old_pc + 4, rd);
+        // Next instruction is a NOP
+        let step_next = emu.exec_trace(Instruction::new(Opcode::Add, 0, 0, 0, 0));
 
-        sim.pc = Fr::from(old_pc);
-        Simulator::t_jal(&mut sim, 1, imm);
-        let r = sim.pc;
-        let rd = sim.regs[1];
-        assert_eq!(Fr::from(pc), r, "sim {inst_str} {imm} -> pc={pc} != pc={r}");
-        assert_eq!(Fr::from(old_pc + 4), rd);
+        Simulator::<Fr>::t_jal(&step.into(), &step_next.into());
     }
 }
 
@@ -316,27 +300,22 @@ fn test_inst_jalr() {
     ]
     .to_vec();
 
-    let inst_str = "jalr";
+    let op = Opcode::Jalr;
     for (pc, rs1, imm) in cases.iter().cloned() {
         let old_pc = 0x100;
-        let mut emu = Emulator::default();
-        let mut sim = Simulator::default();
+        let mut emu = new_emu();
 
         emu.pc = old_pc;
         emu.regs[2] = rs1;
-        Emulator::jalr(&mut emu, 1, 2, imm);
+        let step = emu.exec_trace(Instruction::new(op, 1, 2, 0, imm));
         let r = emu.pc;
         let rd = emu.regs[1];
-        assert_eq!(pc, r, "emu {inst_str} {imm} -> pc={pc} != pc={r}");
+        assert_eq!(pc, r, "emu {op} {imm} -> pc={pc} != pc={r}");
         assert_eq!(old_pc + 4, rd);
+        // Next instruction is a NOP
+        let step_next = emu.exec_trace(Instruction::new(Opcode::Add, 0, 0, 0, 0));
 
-        sim.pc = Fr::from(old_pc);
-        sim.regs[2] = Fr::from(rs1);
-        Simulator::t_jalr(&mut sim, 1, 2, imm);
-        let r = sim.pc;
-        let rd = sim.regs[1];
-        assert_eq!(Fr::from(pc), r, "sim {inst_str} {imm} -> pc={pc} != pc={r}");
-        assert_eq!(Fr::from(old_pc + 4), rd);
+        Simulator::<Fr>::t_jalr(&step.into(), &step_next.into());
     }
 }
 

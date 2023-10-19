@@ -3,11 +3,13 @@
 pub mod decoder;
 pub mod memory;
 
-use crate::MemOp;
 use crate::Registers;
 use crate::REG_SP;
+use crate::{Instruction, Opcode, Step as GenericStep};
 use decoder::decode;
 use memory::{Memory, MemoryTracer};
+
+type Step<T> = GenericStep<T, Instruction>;
 
 #[derive(Default)]
 pub struct Emulator<T, M: Memory> {
@@ -31,14 +33,6 @@ impl<T: Default + From<u64>, M: Memory> Emulator<T, M> {
     }
 }
 
-#[derive(Debug)]
-pub struct Step<T> {
-    pub pc: T,
-    pub inst: Instruction,
-    pub regs: Registers<T>,
-    pub mem_ops: Vec<MemOp>,
-}
-
 impl<T: Default + From<u64>, M: Memory> Emulator<T, MemoryTracer<M>> {
     pub fn new_tracer(mem: M) -> Self {
         let mem = MemoryTracer::new(mem);
@@ -54,6 +48,9 @@ const SYSCALL_BRK: u64 = 214;
 
 // Emulated instructions
 impl<M: Memory> Emulator<u64, M> {
+    pub fn nop(&mut self) {
+        self.pc = self.pc + 4;
+    }
     // #### Initialization
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
@@ -200,19 +197,15 @@ impl<M: Memory> Emulator<u64, M> {
 }
 
 impl<M: Memory> Emulator<u64, M> {
-    pub fn step(&mut self) -> Instruction {
+    pub fn exec(&mut self, inst: Instruction) {
         use Opcode::*;
-        // Fetch
-        let inst_u32 = self.mem.read_u32(self.pc);
-        // Decode
-        let inst = decode(inst_u32).expect("Valid instruction");
         let Instruction {
             op,
             rd,
             rs1,
             rs2,
             imm,
-        } = inst.clone();
+        } = inst;
         // Execute
         match op {
             Lui => self.lui(rd, imm),
@@ -230,11 +223,33 @@ impl<M: Memory> Emulator<u64, M> {
             Jalr => self.jalr(rd, rs1, imm),
             Ecall => self.ecall(),
         }
+    }
+    pub fn step(&mut self) -> Instruction {
+        // Fetch
+        let inst_u32 = self.mem.read_u32(self.pc);
+        // Decode
+        let inst = decode(inst_u32).expect("Valid instruction");
+        self.exec(inst.clone());
         inst
     }
 }
 
 impl<M: Memory> Emulator<u64, MemoryTracer<M>> {
+    pub fn exec_trace(&mut self, inst: Instruction) -> Step<u64> {
+        let pc = self.pc;
+        let regs = self.regs.clone();
+        self.exec(inst.clone());
+        // For this method we skipped the instruction fetch, so all the memory ops come from
+        // instruction execution.
+        let mem_ops = self.mem.trace.clone();
+        self.mem.trace.clear();
+        Step {
+            inst,
+            pc,
+            regs,
+            mem_ops,
+        }
+    }
     pub fn step_trace(&mut self) -> Step<u64> {
         let pc = self.pc;
         let regs = self.regs.clone();
@@ -249,59 +264,5 @@ impl<M: Memory> Emulator<u64, MemoryTracer<M>> {
             regs,
             mem_ops,
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Opcode {
-    // RISC-U supported opcodes
-    Lui,
-    Addi,
-    Ld,
-    Sd,
-    Add,
-    Sub,
-    Mul,
-    Divu,
-    Remu,
-    Sltu,
-    Beq,
-    Jal,
-    Jalr,
-    Ecall,
-}
-
-#[derive(Debug, Clone)]
-pub struct Instruction {
-    op: Opcode,
-    rd: usize,
-    rs1: usize,
-    rs2: usize,
-    imm: i64,
-}
-
-impl Instruction {
-    fn new(op: Opcode, rd: usize, rs1: usize, rs2: usize, imm: i64) -> Self {
-        Instruction {
-            op,
-            rd,
-            rs1,
-            rs2,
-            imm,
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_new_pk_from_elf() {
-        let path = std::path::PathBuf::from("riscu_examples/c/fibo.bin");
-        let file_data = std::fs::read(path).expect("Could not read file.");
-        let slice = file_data.as_slice();
-        let file = ElfBytes::<LittleEndian>::minimal_parse(slice).expect("Open test1");
-        let emu = Emulator::<u64, _>::new_pk_from_elf(1024 * 1024, &file);
     }
 }

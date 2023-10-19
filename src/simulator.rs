@@ -5,10 +5,13 @@
 use crate::expr::Arithmetic;
 use crate::expr::Var;
 use crate::Registers;
+use crate::{Instruction, Opcode, Step as GenericStep};
 
 use ark_ff::{biginteger::BigInteger, PrimeField};
 use std::fmt::{self, Display};
 use std::marker::PhantomData;
+
+type Step<F> = GenericStep<F, JoltInstruction>;
 
 trait ToLeBits {
     type T;
@@ -333,6 +336,45 @@ impl<F: PrimeField> LookupTables<F> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OpFlags {
+    // TODO
+}
+
+#[derive(Debug, Clone)]
+pub struct JoltInstruction {
+    pub op: Opcode,
+    rd: usize,
+    rs1: usize,
+    rs2: usize,
+    imm: i64,
+    opflags: OpFlags,
+}
+
+impl From<Instruction> for JoltInstruction {
+    fn from(inst: Instruction) -> Self {
+        JoltInstruction {
+            op: inst.op,
+            rd: inst.rd,
+            rs1: inst.rs1,
+            rs2: inst.rs2,
+            imm: inst.imm,
+            opflags: OpFlags {},
+        }
+    }
+}
+
+impl<F: From<u64>> From<GenericStep<u64, Instruction>> for GenericStep<F, JoltInstruction> {
+    fn from(step: GenericStep<u64, Instruction>) -> Self {
+        Step {
+            pc: F::from(step.pc),
+            inst: step.inst.into(),
+            regs: step.regs.into_f(),
+            mem_ops: step.mem_ops,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Simulator<F: PrimeField> {
     pub(crate) pc: F,
@@ -355,66 +397,76 @@ impl<F: PrimeField> Simulator<F> {
     // #### Initialization
 
     // `lui rd,imm`: `rd = imm * 2^12; pc = pc + 4` with `-2^19 <= imm < 2^19`
-    pub fn t_lui(&mut self, rd: usize, imm: i64) {
+    pub fn t_lui(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.5
         // No lookup required
-        self.regs[rd] = F::from(imm as u64);
-        self.pc = self.pc + F::from(4u32);
+        assert_eq!(step_next.regs[inst.rd], F::from(inst.imm as u64));
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
     }
     // `addi rd,rs1,imm`: `rd = rs1 + imm; pc = pc + 4` with `-2^11 <= imm < 2^11`
-    pub fn t_addi(&mut self, rd: usize, rs1: usize, imm: i64) {
+    pub fn t_addi(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.2 (Same as ADD)
         // Index. z = x + y over the native field
-        let z = self.regs[rs1] + F::from(imm as u64);
+        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
-        self.regs[rd] = result;
-        self.pc = self.pc + F::from(4u32);
+        assert_eq!(step_next.regs[inst.rd], result);
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
     }
 
     // #### Memory
 
     // `ld rd,imm(rs1)`: `rd = memory[rs1 + imm]; pc = pc + 4` with `-2^11 <= imm < 2^11`
-    // TODO
+    pub fn t_ld(step: &Step<F>, step_next: &Step<F>) {
+        todo!();
+    }
     // `sd rs2,imm(rs1)`: `memory[rs1 + imm] = rs2; pc = pc + 4` with `-2^11 <= imm < 2^11`
-    // TODO
+    pub fn t_sd(step: &Step<F>, step_next: &Step<F>) {
+        todo!();
+    }
 
     // #### Arithmetic
 
     // `add rd,rs1,rs2`: `rd = rs1 + rs2; pc = pc + 4`
-    pub fn t_add(&mut self, rd: usize, rs1: usize, rs2: usize) {
+    pub fn t_add(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.2
         // Index. z = x + y over the native field
-        let z = self.regs[rs1] + self.regs[rs2];
+        let z = step.regs[inst.rs1] + step.regs[inst.rs2];
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
-        self.regs[rd] = result;
-        self.pc = self.pc + F::from(4u32);
+        assert_eq!(step_next.regs[inst.rd], result);
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
     }
     // `sub rd,rs1,rs2`: `rd = rs1 - rs2; pc = pc + 4`
-    pub fn t_sub(&mut self, rd: usize, rs1: usize, rs2: usize) {
+    pub fn t_sub(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.2
         // Index. z = x + (2^W - y) over the native field
-        let z = self.regs[rs1] + (f_pow::<F>(2, W) - self.regs[rs2]);
+        let z = step.regs[inst.rs1] + (f_pow::<F>(2, W) - step.regs[inst.rs2]);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
-        self.regs[rd] = result;
-        self.pc = self.pc + F::from(4u32);
+        assert_eq!(step_next.regs[inst.rd], result);
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
     }
     // `mul rd,rs1,rs2`: `rd = rs1 * rs2; pc = pc + 4`
-    pub fn t_mul(&mut self, rd: usize, rs1: usize, rs2: usize) {
+    pub fn t_mul(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 6.2.1
         // Index. z = x * y over the native field
-        let z = self.regs[rs1] * self.regs[rs2];
+        let z = step.regs[inst.rs1] * step.regs[inst.rs2];
         // Lookup. z has 2*W bits.  Take lowest W bits via lookup table
         // let result = LookupTables::wx2_to_w(W, z);
         let result = LookupTables::zero_upper_bits(2 * W, W, W / C, z);
-        self.regs[rd] = result;
-        self.pc = self.pc + F::from(4u32);
+        assert_eq!(step_next.regs[inst.rd], result);
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
     }
     // `divu rd,rs1,rs2`: `rd = rs1 / rs2; pc = pc + 4` where the values of `rs1` and
     // `rs2` are interpreted as unsigned integers.
-    pub fn t_divu(&mut self, rd: usize, rs1: usize, rs2: usize) {
+    pub fn t_divu(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 6.3
         // x = q * y + r
         // where x = rs1, y = rs2, q = rd
@@ -422,7 +474,8 @@ impl<F: PrimeField> Simulator<F> {
     }
     // `remu rd,rs1,rs2`: `rd = rs1 % rs2; pc = pc + 4` where the values of `rs1` and `rs2` are
     // interpreted as unsigned integers.
-    pub fn t_remu(&mut self, rd: usize, rs1: usize, rs2: usize) {
+    pub fn t_remu(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 6.3
         // x = q * y + r
         // where x = rs1, y = rs2, r = rd
@@ -433,77 +486,86 @@ impl<F: PrimeField> Simulator<F> {
 
     // `sltu rd,rs1,rs2`: `if (rs1 < rs2) { rd = 1 } else { rd = 0 } pc = pc + 4`
     // where the values of `rs1` and `rs2` are interpreted as unsigned integers.
-    pub fn t_sltu(&mut self, rd: usize, rs1: usize, rs2: usize) {
+    pub fn t_sltu(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.3, 4.2.2
         // Index. z = x || y over the native field
-        let z = self.regs[rs1] + f_pow::<F>(2, W) * self.regs[rs2];
+        let z = step.regs[inst.rs1] + f_pow::<F>(2, W) * step.regs[inst.rs2];
         // Lookup
         let result = LookupTables::ltu(W, C, z);
-        self.regs[rd] = result;
-        self.pc = self.pc + F::from(4u32);
+        assert_eq!(step_next.regs[inst.rd], result);
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
     }
 
     // #### Control
 
     // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }`
     // with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
-    pub fn t_beq(&mut self, rs1: usize, rs2: usize, imm: i64) {
+    pub fn t_beq(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.7
         // Index. z = x || y over the native field
-        let z = self.regs[rs1] + f_pow::<F>(2, W) * self.regs[rs2];
+        let z = step.regs[inst.rs1] + f_pow::<F>(2, W) * step.regs[inst.rs2];
         // PC is not computed by a lookup
         let condition = LookupTables::eq(W, C, z);
         // Simulate the encoding of the instruction from Jolt (where opflag=positive)
         let (positive, imm) = {
-            if imm >= 0 {
-                (F::one(), F::from(imm as u64))
+            if inst.imm >= 0 {
+                (F::one(), F::from(inst.imm as u64))
             } else {
-                (F::zero(), F::from((-imm) as u64))
+                (F::zero(), F::from((-inst.imm) as u64))
             }
         };
-        self.pc = self.pc
-            + if condition == F::ONE {
-                if positive == F::ONE {
-                    imm
+        assert_eq!(
+            step_next.pc,
+            step.pc
+                + if condition == F::ONE {
+                    if positive == F::ONE {
+                        imm
+                    } else {
+                        -imm
+                    }
                 } else {
-                    -imm
+                    F::from(4u32)
                 }
-            } else {
-                F::from(4u32)
-            };
+        );
     }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
-    pub fn t_jal(&mut self, rd: usize, imm: i64) {
+    pub fn t_jal(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.6
         // Index. z = x + y over the native field
-        let z = self.pc + F::from(imm as u64);
+        let z = step.pc + F::from(inst.imm as u64);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
         // useful.  The value stored in rd is the old pc + 4, so that we can return back after the
         // jump.
-        self.regs[rd] = self.pc + F::from(4u32);
-        self.pc = result;
+        assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, result);
     }
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2;
     // rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
-    pub fn t_jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
+    pub fn t_jalr(step: &Step<F>, step_next: &Step<F>) {
+        let inst = &step.inst;
         // Ref: Jolt 5.6
         // Errata: Jolt says it checks z = pc + imm + 4, but it seems wrong because that value is
         // not used for the new pc nor the new rd, so we skip the `+ 4`.
         // Index. z = x + y over the native field
-        let z = self.regs[rs1] + F::from(imm as u64);
+        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table, setting bit 0 to 0.
         let result = LookupTables::zero_upper_bits_lower_bit(W + 1, W, W / C, z);
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
         // useful.  The value stored in rd is the old pc + 4, so that we can return back after the
         // jump.
-        self.regs[rd] = self.pc + F::from(4u32);
-        self.pc = result;
+        assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, result);
     }
     // #### System
 
     // `ecall`: system call number is in `a7`, actual parameters are in `a0-a3`, return value is in
     // `a0`.
-    // TODO
+    pub fn t_ecall(step: &Step<F>, step_next: &Step<F>) {
+        println!("DBG: Skipping Simulator ecall");
+    }
 }
