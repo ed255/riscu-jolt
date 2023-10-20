@@ -8,11 +8,13 @@ pub trait Memory {
     fn read_u8(&mut self, addr: u64) -> u8;
 
     fn read_u32(&mut self, addr: u64) -> u32 {
+        assert!(addr % 4 == 0, "read-address-misaligned");
         let data = [0, 1, 2, 3].map(|i| self.read_u8(addr + i));
         u32::from_le_bytes(data)
     }
 
     fn read_u64(&mut self, addr: u64) -> u64 {
+        assert!(addr % 8 == 0, "read-address-misaligned");
         let data = [0, 1, 2, 3, 4, 5, 6, 7].map(|i| self.read_u8(addr + i));
         u64::from_le_bytes(data)
     }
@@ -20,6 +22,7 @@ pub trait Memory {
     fn write_u8(&mut self, addr: u64, value: u8);
 
     fn write_u64(&mut self, addr: u64, value: u64) {
+        assert!(addr % 8 == 0, "write-address-misaligned");
         let data = value.to_le_bytes();
         data.iter()
             .enumerate()

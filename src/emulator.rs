@@ -73,7 +73,6 @@ impl<M: Memory> Emulator<u64, M> {
     pub fn ld(&mut self, rd: usize, rs1: usize, imm: i64) {
         debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
-        assert!(addr % 8 == 0, "load-address-misaligned");
         self.regs[rd] = self.mem.read_u64(addr);
         self.pc = self.pc + 4;
     }
@@ -81,7 +80,6 @@ impl<M: Memory> Emulator<u64, M> {
     pub fn sd(&mut self, rs1: usize, rs2: usize, imm: i64) {
         debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
-        assert!(addr % 8 == 0, "store-address-misaligned");
         self.mem.write_u64(addr, self.regs[rs2]);
         self.pc = self.pc + 4;
     }
