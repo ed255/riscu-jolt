@@ -5,7 +5,7 @@
 use crate::expr::Arithmetic;
 use crate::expr::Var;
 use crate::Registers;
-use crate::{Instruction, Opcode, Step as GenericStep};
+use crate::{Instruction, Opcode, Step as GenericStep, RW};
 
 use ark_ff::{biginteger::BigInteger, PrimeField};
 use std::fmt::{self, Display};
@@ -371,6 +371,7 @@ impl<F: From<u64>> From<GenericStep<u64, Instruction>> for GenericStep<F, JoltIn
             inst: step.inst.into(),
             regs: step.regs.into_f(),
             mem_ops: step.mem_ops,
+            mem_t: step.mem_t,
         }
     }
 }
@@ -403,6 +404,8 @@ impl<F: PrimeField> Simulator<F> {
         // No lookup required
         assert_eq!(step_next.regs[inst.rd], F::from(inst.imm as u64));
         assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
     // `addi rd,rs1,imm`: `rd = rs1 + imm; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn t_addi(step: &Step<F>, step_next: &Step<F>) {
@@ -414,17 +417,51 @@ impl<F: PrimeField> Simulator<F> {
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
         assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
 
     // #### Memory
 
     // `ld rd,imm(rs1)`: `rd = memory[rs1 + imm]; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn t_ld(step: &Step<F>, step_next: &Step<F>) {
-        todo!();
+        let inst = &step.inst;
+        // Ref: Jolt 5.8 (Sum is done as in Branch instructions)
+        // Index. z = x + y over the native field
+        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
+        // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
+        let addr = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
+        let mut read_value = F::zero();
+        for i in 0..8 {
+            assert_eq!(step.mem_ops[i].t, step.mem_t + i as u64);
+            assert_eq!(F::from(step.mem_ops[i].addr), addr + F::from(i as u64));
+            assert_eq!(step.mem_ops[i].rw, RW::Read);
+            read_value += F::from(step.mem_ops[i].value as u64) * f_pow::<F>(2, 8 * i);
+        }
+        assert_eq!(step_next.regs[inst.rd], read_value);
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 8);
+        assert_eq!(step_next.mem_t, step.mem_t + 8);
     }
     // `sd rs2,imm(rs1)`: `memory[rs1 + imm] = rs2; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn t_sd(step: &Step<F>, step_next: &Step<F>) {
-        todo!();
+        let inst = &step.inst;
+        // Ref: Jolt 5.8 (Sum is done as in Branch instructions)
+        // Index. z = x + y over the native field
+        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
+        // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
+        let addr = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
+        let mut write_value = F::zero();
+        for i in 0..8 {
+            assert_eq!(step.mem_ops[i].t, step.mem_t + i as u64);
+            assert_eq!(F::from(step.mem_ops[i].addr), addr + F::from(i as u64));
+            assert_eq!(step.mem_ops[i].rw, RW::Write);
+            write_value += F::from(step.mem_ops[i].value as u64) * f_pow::<F>(2, 8 * i);
+        }
+        assert_eq!(step.regs[inst.rs2], write_value);
+        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 8);
+        assert_eq!(step_next.mem_t, step.mem_t + 8);
     }
 
     // #### Arithmetic
@@ -439,6 +476,8 @@ impl<F: PrimeField> Simulator<F> {
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
         assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
     // `sub rd,rs1,rs2`: `rd = rs1 - rs2; pc = pc + 4`
     pub fn t_sub(step: &Step<F>, step_next: &Step<F>) {
@@ -450,6 +489,8 @@ impl<F: PrimeField> Simulator<F> {
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
         assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
     // `mul rd,rs1,rs2`: `rd = rs1 * rs2; pc = pc + 4`
     pub fn t_mul(step: &Step<F>, step_next: &Step<F>) {
@@ -462,6 +503,8 @@ impl<F: PrimeField> Simulator<F> {
         let result = LookupTables::zero_upper_bits(2 * W, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
         assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
     // `divu rd,rs1,rs2`: `rd = rs1 / rs2; pc = pc + 4` where the values of `rs1` and
     // `rs2` are interpreted as unsigned integers.
@@ -470,6 +513,8 @@ impl<F: PrimeField> Simulator<F> {
         // Ref: Jolt 6.3
         // x = q * y + r
         // where x = rs1, y = rs2, q = rd
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
         todo!();
     }
     // `remu rd,rs1,rs2`: `rd = rs1 % rs2; pc = pc + 4` where the values of `rs1` and `rs2` are
@@ -479,6 +524,8 @@ impl<F: PrimeField> Simulator<F> {
         // Ref: Jolt 6.3
         // x = q * y + r
         // where x = rs1, y = rs2, r = rd
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
         todo!();
     }
 
@@ -495,6 +542,8 @@ impl<F: PrimeField> Simulator<F> {
         let result = LookupTables::ltu(W, C, z);
         assert_eq!(step_next.regs[inst.rd], result);
         assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
 
     // #### Control
@@ -529,6 +578,8 @@ impl<F: PrimeField> Simulator<F> {
                     F::from(4u32)
                 }
         );
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     pub fn t_jal(step: &Step<F>, step_next: &Step<F>) {
@@ -543,6 +594,8 @@ impl<F: PrimeField> Simulator<F> {
         // jump.
         assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u32));
         assert_eq!(step_next.pc, result);
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2;
     // rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
@@ -560,6 +613,8 @@ impl<F: PrimeField> Simulator<F> {
         // jump.
         assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u32));
         assert_eq!(step_next.pc, result);
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
     // #### System
 
@@ -567,5 +622,7 @@ impl<F: PrimeField> Simulator<F> {
     // `a0`.
     pub fn t_ecall(step: &Step<F>, step_next: &Step<F>) {
         println!("DBG: Skipping Simulator ecall");
+        assert_eq!(step.mem_ops.len(), 0);
+        assert_eq!(step_next.mem_t, step.mem_t);
     }
 }

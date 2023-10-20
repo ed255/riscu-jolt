@@ -45,7 +45,7 @@ impl<T> IndexMut<usize> for Registers<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RW {
     Read = 0,
     Write = 1,
@@ -112,5 +112,6 @@ pub struct Step<T, I> {
     pub pc: T,
     pub inst: I,
     pub regs: Registers<T>,
+    pub mem_t: u64,
     pub mem_ops: Vec<MemOp>,
 }
