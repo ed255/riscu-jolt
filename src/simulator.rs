@@ -338,7 +338,41 @@ impl<F: PrimeField> LookupTables<F> {
 
 #[derive(Debug, Clone)]
 pub struct OpFlags {
-    // TODO
+    first_rs2: bool,
+    second_imm: bool,
+    load: bool,
+    store: bool,
+    jump: bool,
+    branch: bool,
+    update_rd: bool,
+    add: bool,
+    sub: bool,
+    mult: bool,
+    non_deterministic: bool,
+    is_assertion_false: bool,
+    is_assertion_true: bool,
+    is_positive: bool,
+}
+
+impl Default for OpFlags {
+    fn default() -> Self {
+        OpFlags {
+            first_rs2: false,
+            second_imm: false,
+            load: false,
+            store: false,
+            jump: false,
+            branch: false,
+            update_rd: false,
+            add: false,
+            sub: false,
+            mult: false,
+            non_deterministic: false,
+            is_assertion_false: false,
+            is_assertion_true: false,
+            is_positive: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -353,13 +387,83 @@ pub struct JoltInstruction {
 
 impl From<Instruction> for JoltInstruction {
     fn from(inst: Instruction) -> Self {
+        let mut opflags = OpFlags::default();
+        match inst.op {
+            Opcode::Lui => {
+                opflags.second_imm = true;
+                opflags.mult = true;
+                opflags.update_rd = true;
+                opflags.load = true;
+            }
+            Opcode::Addi => {
+                opflags.second_imm = true;
+                opflags.add = true;
+                opflags.update_rd = true;
+                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+            }
+            Opcode::Ld => {
+                opflags.load = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Sd => {
+                opflags.store = true;
+            }
+            Opcode::Add => {
+                opflags.add = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Sub => {
+                opflags.sub = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Mul => {
+                opflags.mult = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Divu => {
+                // DIVU is a virtual instruction
+                // uses ADVICE, MUL, ASSERT, ADD, MOVE
+                // According to the Jolt 6.3's virtual sequence
+                opflags.non_deterministic = true;
+                opflags.mult = true;
+                opflags.is_assertion_true = true;
+                opflags.add = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Remu => {
+                // Remu is a virtual instruction
+                // uses ADVICE, MUL, ASSERT, ADD, MOVE
+                // According to the Jolt 6.3's virtual sequence
+                opflags.non_deterministic = true;
+                opflags.mult = true;
+                opflags.is_assertion_true = true;
+                opflags.add = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Sltu => {
+                opflags.update_rd = true;
+            }
+            Opcode::Beq => {
+                opflags.branch = true;
+                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+            }
+            Opcode::Jal => {
+                opflags.jump = true;
+                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+            }
+            Opcode::Jalr => {
+                opflags.jump = true;
+                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+            }
+            Opcode::Ecall => {}
+        };
         JoltInstruction {
             op: inst.op,
             rd: inst.rd,
             rs1: inst.rs1,
             rs2: inst.rs2,
             imm: inst.imm,
-            opflags: OpFlags {},
+            opflags,
         }
     }
 }
@@ -558,21 +662,14 @@ impl<F: PrimeField> Simulator<F> {
         // PC is not computed by a lookup
         let condition = LookupTables::eq(W, C, z);
         // Simulate the encoding of the instruction from Jolt (where opflag=positive)
-        let (positive, imm) = {
-            if inst.imm >= 0 {
-                (F::one(), F::from(inst.imm as u64))
-            } else {
-                (F::zero(), F::from((-inst.imm) as u64))
-            }
-        };
         assert_eq!(
             step_next.pc,
             step.pc
                 + if condition == F::ONE {
-                    if positive == F::ONE {
-                        imm
+                    if inst.opflags.is_positive {
+                        F::from(inst.imm as u64)
                     } else {
-                        -imm
+                        -F::from(-inst.imm as u64)
                     }
                 } else {
                     F::from(4u32)
