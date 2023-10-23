@@ -71,6 +71,7 @@ fn main() -> Result<(), pico_args::Error> {
                 inst: Instruction::default(),
                 regs: emu.regs.clone(),
                 mem_ops: Vec::new(),
+                mem_t: emu.mem.t,
             };
             let step: JoltStep<Fr> = step.into();
             let step_next: JoltStep<Fr> = step_next.into();

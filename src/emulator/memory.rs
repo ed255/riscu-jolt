@@ -7,7 +7,15 @@ use elf::ElfBytes;
 pub trait Memory {
     fn read_u8(&mut self, addr: u64) -> u8;
 
+    // Used for memory fetching
     fn read_u32(&mut self, addr: u64) -> u32 {
+        assert!(addr % 4 == 0, "read-address-misaligned");
+        let data = [0, 1, 2, 3].map(|i| self.read_u8(addr + i));
+        u32::from_le_bytes(data)
+    }
+
+    // Used for instruction fetching
+    fn fetch_u32(&mut self, addr: u64) -> u32 {
         assert!(addr % 4 == 0, "read-address-misaligned");
         let data = [0, 1, 2, 3].map(|i| self.read_u8(addr + i));
         u32::from_le_bytes(data)
@@ -156,9 +164,9 @@ impl Memory for RiscvPkMemoryMap {
 
 #[derive(Debug)]
 pub struct MemoryTracer<M: Memory> {
-    mem: M,                // Memory state
+    pub mem: M,            // Memory state
     pub trace: Vec<MemOp>, // Chronological trace of memory operations
-    t: u64,                // Timestamp counter
+    pub t: u64,            // Timestamp counter
 }
 
 impl<M: Memory> MemoryTracer<M> {
@@ -166,7 +174,8 @@ impl<M: Memory> MemoryTracer<M> {
         Self {
             mem,
             trace: Vec::new(),
-            t: 0,
+            // Memory timestamp starts at 1 so that RLC of MemoryOp is always != 0
+            t: 1,
         }
     }
 }
@@ -193,6 +202,13 @@ impl<M: Memory> Memory for MemoryTracer<M> {
         });
         self.t += 1;
         self.mem.write_u8(addr, value)
+    }
+
+    // We don't trace instruction fetches.
+    fn fetch_u32(&mut self, addr: u64) -> u32 {
+        assert!(addr % 4 == 0, "read-address-misaligned");
+        let data = [0, 1, 2, 3].map(|i| self.mem.read_u8(addr + i));
+        u32::from_le_bytes(data)
     }
 
     fn sp(&self) -> u64 {

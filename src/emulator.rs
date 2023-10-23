@@ -224,7 +224,7 @@ impl<M: Memory> Emulator<u64, M> {
     }
     pub fn step(&mut self) -> Instruction {
         // Fetch
-        let inst_u32 = self.mem.read_u32(self.pc);
+        let inst_u32 = self.mem.fetch_u32(self.pc);
         // Decode
         let inst = decode(inst_u32).expect("Valid instruction");
         self.exec(inst.clone());
@@ -236,6 +236,7 @@ impl<M: Memory> Emulator<u64, MemoryTracer<M>> {
     pub fn exec_trace(&mut self, inst: Instruction) -> Step<u64> {
         let pc = self.pc;
         let regs = self.regs.clone();
+        let mem_t = self.mem.t;
         self.exec(inst.clone());
         // For this method we skipped the instruction fetch, so all the memory ops come from
         // instruction execution.
@@ -245,12 +246,14 @@ impl<M: Memory> Emulator<u64, MemoryTracer<M>> {
             inst,
             pc,
             regs,
+            mem_t,
             mem_ops,
         }
     }
     pub fn step_trace(&mut self) -> Step<u64> {
         let pc = self.pc;
         let regs = self.regs.clone();
+        let mem_t = self.mem.t;
         let inst = self.step();
         // The memory trace contains 4 entries for fetching the instruction (32 bits) and optionally more entries
         // from load / store instruction
@@ -260,6 +263,7 @@ impl<M: Memory> Emulator<u64, MemoryTracer<M>> {
             inst,
             pc,
             regs,
+            mem_t,
             mem_ops,
         }
     }
