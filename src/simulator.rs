@@ -340,6 +340,7 @@ impl<F: PrimeField> LookupTables<F> {
 pub struct OpFlags {
     first_rs2: bool,
     second_imm: bool,
+    // load from memory
     load: bool,
     store: bool,
     jump: bool,
@@ -391,7 +392,6 @@ impl From<Instruction> for JoltInstruction {
         match inst.op {
             Opcode::Lui => {
                 opflags.second_imm = true;
-                opflags.mult = true;
                 opflags.update_rd = true;
                 opflags.load = true;
             }
@@ -399,14 +399,15 @@ impl From<Instruction> for JoltInstruction {
                 opflags.second_imm = true;
                 opflags.add = true;
                 opflags.update_rd = true;
-                opflags.is_positive = if inst.imm >= 0 { true } else { false };
             }
             Opcode::Ld => {
                 opflags.load = true;
                 opflags.update_rd = true;
+                opflags.add = true;
             }
             Opcode::Sd => {
                 opflags.store = true;
+                opflags.add = true;
             }
             Opcode::Add => {
                 opflags.add = true;
