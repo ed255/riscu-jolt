@@ -382,7 +382,7 @@ pub struct JoltInstruction {
     rd: usize,
     rs1: usize,
     rs2: usize,
-    imm: i64,
+    imm: u64,
     opflags: OpFlags,
 }
 
@@ -393,7 +393,6 @@ impl From<Instruction> for JoltInstruction {
             Opcode::Lui => {
                 opflags.second_imm = true;
                 opflags.update_rd = true;
-                opflags.load = true;
             }
             Opcode::Addi => {
                 opflags.second_imm = true;
@@ -458,12 +457,17 @@ impl From<Instruction> for JoltInstruction {
             }
             Opcode::Ecall => {}
         };
+        let imm = if opflags.branch & !opflags.is_positive {
+            inst.imm.unsigned_abs()
+        } else {
+            inst.imm as u64
+        };
         JoltInstruction {
             op: inst.op,
             rd: inst.rd,
             rs1: inst.rs1,
             rs2: inst.rs2,
-            imm: inst.imm,
+            imm,
             opflags,
         }
     }
@@ -663,14 +667,15 @@ impl<F: PrimeField> Simulator<F> {
         // PC is not computed by a lookup
         let condition = LookupTables::eq(W, C, z);
         // Simulate the encoding of the instruction from Jolt (where opflag=positive)
+        let imm = F::from(inst.imm);
         assert_eq!(
             step_next.pc,
             step.pc
                 + if condition == F::ONE {
                     if inst.opflags.is_positive {
-                        F::from(inst.imm as u64)
+                        imm
                     } else {
-                        -F::from(-inst.imm as u64)
+                        -imm
                     }
                 } else {
                     F::from(4u32)
@@ -684,7 +689,7 @@ impl<F: PrimeField> Simulator<F> {
         let inst = &step.inst;
         // Ref: Jolt 5.6
         // Index. z = x + y over the native field
-        let z = step.pc + F::from(inst.imm as u64);
+        let z = step.pc + F::from(inst.imm);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
@@ -703,7 +708,7 @@ impl<F: PrimeField> Simulator<F> {
         // Errata: Jolt says it checks z = pc + imm + 4, but it seems wrong because that value is
         // not used for the new pc nor the new rd, so we skip the `+ 4`.
         // Index. z = x + y over the native field
-        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
+        let z = step.regs[inst.rs1] + F::from(inst.imm);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table, setting bit 0 to 0.
         let result = LookupTables::zero_upper_bits_lower_bit(W + 1, W, W / C, z);
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
