@@ -338,7 +338,42 @@ impl<F: PrimeField> LookupTables<F> {
 
 #[derive(Debug, Clone)]
 pub struct OpFlags {
-    // TODO
+    first_rs2: bool,
+    second_imm: bool,
+    // load from memory
+    load: bool,
+    store: bool,
+    jump: bool,
+    branch: bool,
+    update_rd: bool,
+    add: bool,
+    sub: bool,
+    mult: bool,
+    non_deterministic: bool,
+    is_assertion_false: bool,
+    is_assertion_true: bool,
+    is_positive: bool,
+}
+
+impl Default for OpFlags {
+    fn default() -> Self {
+        OpFlags {
+            first_rs2: false,
+            second_imm: false,
+            load: false,
+            store: false,
+            jump: false,
+            branch: false,
+            update_rd: false,
+            add: false,
+            sub: false,
+            mult: false,
+            non_deterministic: false,
+            is_assertion_false: false,
+            is_assertion_true: false,
+            is_positive: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -347,19 +382,93 @@ pub struct JoltInstruction {
     rd: usize,
     rs1: usize,
     rs2: usize,
-    imm: i64,
+    imm: u64,
     opflags: OpFlags,
 }
 
 impl From<Instruction> for JoltInstruction {
     fn from(inst: Instruction) -> Self {
+        let mut opflags = OpFlags::default();
+        match inst.op {
+            Opcode::Lui => {
+                opflags.second_imm = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Addi => {
+                opflags.second_imm = true;
+                opflags.add = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Ld => {
+                opflags.load = true;
+                opflags.update_rd = true;
+                opflags.add = true;
+            }
+            Opcode::Sd => {
+                opflags.store = true;
+                opflags.add = true;
+            }
+            Opcode::Add => {
+                opflags.add = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Sub => {
+                opflags.sub = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Mul => {
+                opflags.mult = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Divu => {
+                // DIVU is a virtual instruction
+                // uses ADVICE, MUL, ASSERT, ADD, MOVE
+                // According to the Jolt 6.3's virtual sequence
+                opflags.non_deterministic = true;
+                opflags.mult = true;
+                opflags.is_assertion_true = true;
+                opflags.add = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Remu => {
+                // Remu is a virtual instruction
+                // uses ADVICE, MUL, ASSERT, ADD, MOVE
+                // According to the Jolt 6.3's virtual sequence
+                opflags.non_deterministic = true;
+                opflags.mult = true;
+                opflags.is_assertion_true = true;
+                opflags.add = true;
+                opflags.update_rd = true;
+            }
+            Opcode::Sltu => {
+                opflags.update_rd = true;
+            }
+            Opcode::Beq => {
+                opflags.branch = true;
+                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+            }
+            Opcode::Jal => {
+                opflags.jump = true;
+                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+            }
+            Opcode::Jalr => {
+                opflags.jump = true;
+                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+            }
+            Opcode::Ecall => {}
+        };
+        let imm = if opflags.branch & !opflags.is_positive {
+            inst.imm.unsigned_abs()
+        } else {
+            inst.imm as u64
+        };
         JoltInstruction {
             op: inst.op,
             rd: inst.rd,
             rs1: inst.rs1,
             rs2: inst.rs2,
-            imm: inst.imm,
-            opflags: OpFlags {},
+            imm,
+            opflags,
         }
     }
 }
@@ -558,18 +667,12 @@ impl<F: PrimeField> Simulator<F> {
         // PC is not computed by a lookup
         let condition = LookupTables::eq(W, C, z);
         // Simulate the encoding of the instruction from Jolt (where opflag=positive)
-        let (positive, imm) = {
-            if inst.imm >= 0 {
-                (F::one(), F::from(inst.imm as u64))
-            } else {
-                (F::zero(), F::from((-inst.imm) as u64))
-            }
-        };
+        let imm = F::from(inst.imm);
         assert_eq!(
             step_next.pc,
             step.pc
                 + if condition == F::ONE {
-                    if positive == F::ONE {
+                    if inst.opflags.is_positive {
                         imm
                     } else {
                         -imm
@@ -586,7 +689,7 @@ impl<F: PrimeField> Simulator<F> {
         let inst = &step.inst;
         // Ref: Jolt 5.6
         // Index. z = x + y over the native field
-        let z = step.pc + F::from(inst.imm as u64);
+        let z = step.pc + F::from(inst.imm);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
@@ -605,7 +708,7 @@ impl<F: PrimeField> Simulator<F> {
         // Errata: Jolt says it checks z = pc + imm + 4, but it seems wrong because that value is
         // not used for the new pc nor the new rd, so we skip the `+ 4`.
         // Index. z = x + y over the native field
-        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
+        let z = step.regs[inst.rs1] + F::from(inst.imm);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table, setting bit 0 to 0.
         let result = LookupTables::zero_upper_bits_lower_bit(W + 1, W, W / C, z);
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
