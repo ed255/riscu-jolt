@@ -41,6 +41,9 @@ pub trait Memory {
     fn sp(&self) -> u64;
 
     fn entry_point(&self) -> u64;
+
+    // Return part of memory corresponding to the executable program, as (address, length)
+    fn text(&self) -> (u64, u64);
 }
 
 #[derive(Default)]
@@ -62,17 +65,27 @@ impl Memory for NoMem {
     fn entry_point(&self) -> u64 {
         0
     }
+
+    fn text(&self) -> (u64, u64) {
+        (0, 0)
+    }
 }
 
 // https://github.com/riscv-software-src/riscv-pk
-pub struct RiscvPkMemoryMap(Vec<u8>);
+pub struct RiscvPkMemoryMap {
+    mem: Vec<u8>,
+    text_len: usize,
+}
 
 pub const RISCV_PK_VMEM: u64 = 0x10000;
 pub const RISCV_PK_ENTRY_POINT: u64 = RISCV_PK_VMEM;
 
 impl RiscvPkMemoryMap {
     pub fn new(mem_size: usize) -> Self {
-        Self(vec![0; mem_size])
+        Self {
+            mem: vec![0; mem_size],
+            text_len: 0,
+        }
     }
 
     pub fn new_load(mem_size: usize, text: &[u8], data_addr: usize, data: &[u8]) -> Self {
@@ -114,8 +127,10 @@ impl RiscvPkMemoryMap {
     }
 
     pub fn load(&mut self, text: &[u8], data_addr: usize, data: &[u8]) {
-        assert!(text.len() < self.0.len());
-        assert!((data_addr - RISCV_PK_ENTRY_POINT as usize) + data.len() < self.0.len());
+        assert!(text.len() % 4 == 0);
+        assert!(text.len() < self.mem.len());
+        assert!((data_addr - RISCV_PK_ENTRY_POINT as usize) + data.len() < self.mem.len());
+        self.text_len = text.len();
         // Load text section
         for (i, b) in text.iter().enumerate() {
             self.write_u8(RISCV_PK_ENTRY_POINT + i as u64, text[i]);
@@ -130,13 +145,13 @@ impl RiscvPkMemoryMap {
     fn map(&self, addr: u64) -> u64 {
         if addr < RISCV_PK_VMEM {
             panic!("Invalid low address 0x{:x} < 0x{:x}", addr, RISCV_PK_VMEM);
-        } else if RISCV_PK_VMEM <= addr && addr < RISCV_PK_VMEM + self.0.len() as u64 {
+        } else if RISCV_PK_VMEM <= addr && addr < RISCV_PK_VMEM + self.mem.len() as u64 {
             addr - RISCV_PK_VMEM
         } else {
             panic!(
                 "Invalid high address 0x{:x} > 0x{:x}",
                 addr,
-                RISCV_PK_VMEM + self.0.len() as u64
+                RISCV_PK_VMEM + self.mem.len() as u64
             );
         }
     }
@@ -145,20 +160,24 @@ impl RiscvPkMemoryMap {
 impl Memory for RiscvPkMemoryMap {
     fn read_u8(&mut self, addr: u64) -> u8 {
         let index = self.map(addr) as usize;
-        self.0[index]
+        self.mem[index]
     }
 
     fn write_u8(&mut self, addr: u64, value: u8) {
         let index = self.map(addr) as usize;
-        self.0[index] = value;
+        self.mem[index] = value;
     }
 
     fn sp(&self) -> u64 {
-        RISCV_PK_ENTRY_POINT + self.0.len() as u64 - std::mem::size_of::<u64>() as u64
+        RISCV_PK_ENTRY_POINT + self.mem.len() as u64 - std::mem::size_of::<u64>() as u64
     }
 
     fn entry_point(&self) -> u64 {
         RISCV_PK_ENTRY_POINT
+    }
+
+    fn text(&self) -> (u64, u64) {
+        (RISCV_PK_ENTRY_POINT, self.text_len as u64)
     }
 }
 
@@ -217,6 +236,10 @@ impl<M: Memory> Memory for MemoryTracer<M> {
 
     fn entry_point(&self) -> u64 {
         self.mem.entry_point()
+    }
+
+    fn text(&self) -> (u64, u64) {
+        self.mem.text()
     }
 }
 
