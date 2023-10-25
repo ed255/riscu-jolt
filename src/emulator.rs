@@ -43,9 +43,6 @@ pub struct Virt<T> {
     // The rom has all the decoded instructions of the program, where some instructions have been
     // expanded using virtual instructions.
     pub rom: Vec<Instruction>,
-    // Wether an instruction in the rom is the beginning of multi-step instruction (which
-    // means this is the first virtual instruction of a multi-step instruction)
-    pub begin_multi_step: HashSet<u64>,
     // Advice buffer used in virtual instructions.  This vector is filled when a multi-step
     // instruction is found with the advice values that subsequent ADVICE instructions will need.
     pub advices: Vec<T>,
@@ -60,7 +57,6 @@ impl<T: Default> Virt<T> {
         use VirtualOpcode::*;
         let (text_addr, text_len) = mem.text();
         let mut rom = Vec::with_capacity((text_len / 4) as usize);
-        let mut begin_multi_step = HashSet::new();
         let mut vpc = 0;
         let mut vpc_map = VirtPcMap::new(text_addr, text_len);
         for addr in (text_addr..(text_addr + text_len)).step_by(4) {
@@ -104,7 +100,6 @@ impl<T: Default> Virt<T> {
                     continue;
                 }
             };
-            begin_multi_step.insert(vpc);
             for inst in virt_insts {
                 rom.push(inst);
                 vpc += 1;
@@ -114,7 +109,6 @@ impl<T: Default> Virt<T> {
             pc: T::default(),
             vpc_map,
             rom,
-            begin_multi_step,
             advices: Vec::new(),
             last_advice: None,
         }
@@ -419,14 +413,16 @@ impl<M: Memory> Emulator<u64, M> {
     }
     pub fn step(&mut self) -> Instruction {
         use Opcode::*;
-        // Fetch
+        // Fetch and decode original instruction
         let inst_u32 = self.mem.fetch_u32(self.pc);
-        // Decode
         let inst = decode(inst_u32).expect("Valid instruction");
         let real_inst = if let Some(ref mut virt) = self.virt {
             // If we have a multi-step instruction that requires advice, fill the advice buffer
             // here.
-            if virt.begin_multi_step.contains(&virt.pc) {
+            // When the current original instruction is multi-step, check wether we are at its
+            // first vpc
+            let vpc_pc_match = virt.vpc_map.get(self.pc) == virt.pc;
+            if vpc_pc_match {
                 match inst.op {
                     Divu | Remu => {
                         let (quotient, _) =
@@ -438,7 +434,8 @@ impl<M: Memory> Emulator<u64, M> {
                     _ => {}
                 }
             }
-            // Get already decoded instruction (possibly virtual)
+            // Use the already decoded instruction at vpc (possibly virtual), which may not match
+            // the original instruction
             virt.rom[virt.pc as usize].clone()
         } else {
             inst
