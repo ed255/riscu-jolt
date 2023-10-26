@@ -58,7 +58,7 @@ fn decode_rs1(ins: u32) -> usize {
 
 // 'rs2' is register source 2
 fn decode_rs2(ins: u32) -> usize {
-    ((ins & ins & 0b00000001111100000000000000000000) >> 20) as usize
+    ((ins & 0b00000001111100000000000000000000) >> 20) as usize
 }
 
 // 12 bits, sign-extended
@@ -196,7 +196,7 @@ mod test {
     // This test is ignored because it requires an external compiled binary
     #[test]
     #[ignore]
-    fn test_decoder() {
+    fn integration_test_decoder() {
         let path = std::path::PathBuf::from("riscu_examples/c/fibo.bin");
         let file_data = std::fs::read(path).expect("Could not read file.");
         let slice = file_data.as_slice();

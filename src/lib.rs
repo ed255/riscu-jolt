@@ -1,3 +1,6 @@
+#![allow(clippy::identity_op)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::eq_op)]
 #![allow(dead_code)]
 #![allow(unused_variables)] // TODO: Remove this in the future
 pub mod emulator;

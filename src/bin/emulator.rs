@@ -1,3 +1,5 @@
+#![allow(clippy::identity_op)]
+
 use riscu::emulator::decoder::decode;
 use riscu::emulator::{memory::Memory, memory::RiscvPkMemoryMap, Emulator};
 use riscu::simulator::{JoltInstruction, Simulator};

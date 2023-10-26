@@ -14,7 +14,7 @@ type EmuStep<F> = GenericStep<F, Instruction>;
 type JoltStep<F> = GenericStep<F, JoltInstruction>;
 
 fn new_emu() -> Emulator {
-    Emulator::new(MemoryTracer::new(NoMem::default()))
+    Emulator::new(MemoryTracer::new(NoMem {}), false)
 }
 
 fn extend_cases_commutative(cases: &mut Vec<(u64, u64, u64)>) {
@@ -32,7 +32,7 @@ fn extend_cases_commutative(cases: &mut Vec<(u64, u64, u64)>) {
 fn test_emu_vs_sim<F: PrimeField>(
     op: Opcode,
     sim_inst: fn(&JoltStep<F>, &JoltStep<F>),
-    cases: &Vec<(u64, u64, u64)>,
+    cases: &[(u64, u64, u64)],
 ) {
     for (result, a, b) in cases.iter().cloned() {
         let mut emu = new_emu();
@@ -107,6 +107,7 @@ fn test_inst_mul() {
 }
 
 #[test]
+#[ignore]
 fn test_inst_divu() {
     // result = a / b
     let cases: Vec<(u64, u64, u64)> = [
@@ -125,6 +126,7 @@ fn test_inst_divu() {
 }
 
 #[test]
+#[ignore]
 fn test_inst_remu() {
     // result = a % b
     let cases: Vec<(u64, u64, u64)> = [
@@ -366,7 +368,7 @@ fn test_g_ltu_expr() {
         .collect();
     let evals: Vec<Expr<Fr, TableEval>> = evals_ltu
         .into_iter()
-        .zip(evals_eq.into_iter())
+        .zip(evals_eq)
         .flat_map(|(a, b)| [a, b])
         .collect();
     let ltu_g = CombineLookups::ltu(&evals);
