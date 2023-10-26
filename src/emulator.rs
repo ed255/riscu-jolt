@@ -9,8 +9,6 @@ use crate::{REG_SP, REG_V0};
 use decoder::decode;
 use memory::{Memory, MemoryTracer};
 
-use std::collections::HashSet;
-
 type Step<T> = GenericStep<T, Instruction>;
 
 pub struct VirtPcMap {
@@ -161,8 +159,10 @@ const SYSCALL_BRK: u64 = 214;
 // Emulated instructions
 impl<M: Memory> Emulator<u64, M> {
     pub fn nop(&mut self) {
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // #### Initialization
 
@@ -170,35 +170,43 @@ impl<M: Memory> Emulator<u64, M> {
     pub fn lui(&mut self, rd: usize, imm: i64) {
         debug_assert_eq!(imm & ((1 << 12) - 1), 0);
         self.regs[rd] = imm as u64;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // `addi rd,rs1,imm`: `rd = rs1 + imm; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn addi(&mut self, rd: usize, rs1: usize, imm: i64) {
-        debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
+        debug_assert!((-(1 << 11)..1 << 11).contains(&imm));
         let (result, _) = self.regs[rs1].overflowing_add(imm as u64);
         self.regs[rd] = result;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
 
     // #### Memory
 
     // `ld rd,imm(rs1)`: `rd = memory[rs1 + imm]; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn ld(&mut self, rd: usize, rs1: usize, imm: i64) {
-        debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
+        debug_assert!((-(1 << 11)..1 << 11).contains(&imm));
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
         self.regs[rd] = self.mem.read_u64(addr);
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // `sd rs2,imm(rs1)`: `memory[rs1 + imm] = rs2; pc = pc + 4` with `-2^11 <= imm < 2^11`
     pub fn sd(&mut self, rs1: usize, rs2: usize, imm: i64) {
-        debug_assert!(-(1 << 11) <= imm && imm < 1 << 11);
+        debug_assert!((-(1 << 11)..1 << 11).contains(&imm));
         let (addr, _) = self.regs[rs1].overflowing_add(imm as u64);
         self.mem.write_u64(addr, self.regs[rs2]);
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
 
     // #### Arithmetic
@@ -207,22 +215,28 @@ impl<M: Memory> Emulator<u64, M> {
     pub fn add(&mut self, rd: usize, rs1: usize, rs2: usize) {
         let (result, _) = self.regs[rs1].overflowing_add(self.regs[rs2]);
         self.regs[rd] = result;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // `sub rd,rs1,rs2`: `rd = rs1 - rs2; pc = pc + 4`
     pub fn sub(&mut self, rd: usize, rs1: usize, rs2: usize) {
         let (result, _) = self.regs[rs1].overflowing_sub(self.regs[rs2]);
         self.regs[rd] = result;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // `mul rd,rs1,rs2`: `rd = rs1 * rs2; pc = pc + 4`
     pub fn mul(&mut self, rd: usize, rs1: usize, rs2: usize) {
         let (result, _) = self.regs[rs1].overflowing_mul(self.regs[rs2]);
         self.regs[rd] = result;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // `divu rd,rs1,rs2`: `rd = rs1 / rs2; pc = pc + 4` where the values of `rs1` and `rs2` are interpreted as unsigned integers.
     pub fn divu(&mut self, rd: usize, rs1: usize, rs2: usize) {
@@ -234,8 +248,10 @@ impl<M: Memory> Emulator<u64, M> {
             self.regs[rs1].overflowing_div(self.regs[rs2])
         };
         self.regs[rd] = result;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // `remu rd,rs1,rs2`: `rd = rs1 % rs2; pc = pc + 4` where the values of `rs1` and `rs2` are interpreted as unsigned integers.
     pub fn remu(&mut self, rd: usize, rs1: usize, rs2: usize) {
@@ -247,8 +263,10 @@ impl<M: Memory> Emulator<u64, M> {
             self.regs[rs1].overflowing_rem(self.regs[rs2])
         };
         self.regs[rd] = result;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // #### Comparison
 
@@ -260,42 +278,52 @@ impl<M: Memory> Emulator<u64, M> {
             0
         };
         self.regs[rd] = result;
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
     // #### Control
 
     // `beq rs1,rs2,imm`: `if (rs1 == rs2) { pc = pc + imm } else { pc = pc + 4 }` with `-2^12 <= imm < 2^12` and `imm % 2 == 0`
     pub fn beq(&mut self, rs1: usize, rs2: usize, imm: i64) {
         if self.regs[rs1] == self.regs[rs2] {
-            debug_assert!(-(1 << 12) <= imm && imm < 1 << 12);
+            debug_assert!((-(1 << 12)..1 << 12).contains(&imm));
             debug_assert_eq!(imm % 2, 0);
             assert_eq!(imm % 4, 0, "instruction-address-misaligned");
-            self.pc = (self.pc as i64 + imm as i64) as u64;
-            self.virt.as_mut().map(|v| v.pc = v.vpc_map.get(self.pc));
+            self.pc = (self.pc as i64 + imm) as u64;
+            if let Some(v) = self.virt.as_mut() {
+                v.pc = v.vpc_map.get(self.pc);
+            }
         } else {
-            self.pc = self.pc + 4;
-            self.virt.as_mut().map(|v| v.pc += 1);
+            self.pc += 4;
+            if let Some(v) = self.virt.as_mut() {
+                v.pc += 1;
+            }
         }
     }
     // `jal rd,imm`: `rd = pc + 4; pc = pc + imm` with `-2^20 <= imm < 2^20` and `imm % 2 == 0`
     pub fn jal(&mut self, rd: usize, imm: i64) {
-        debug_assert!(-(1 << 20) <= imm && imm < 1 << 20);
+        debug_assert!((-(1 << 20)..1 << 20).contains(&imm));
         debug_assert_eq!(imm % 2, 0);
         assert_eq!(imm % 4, 0, "instruction-address-misaligned");
         self.regs[rd] = self.pc + 4;
-        self.pc = (self.pc as i64 + imm as i64) as u64;
-        self.virt.as_mut().map(|v| v.pc = v.vpc_map.get(self.pc));
+        self.pc = (self.pc as i64 + imm) as u64;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc = v.vpc_map.get(self.pc);
+        }
     }
     // `jalr rd,imm(rs1)`: `tmp = ((rs1 + imm) / 2) * 2; rd = pc + 4; pc = tmp` with `-2^11 <= imm < 2^11`
     pub fn jalr(&mut self, rd: usize, rs1: usize, imm: i64) {
-        debug_assert!(-(1 << 12) <= imm && imm < 1 << 12);
+        debug_assert!((-(1 << 12)..1 << 12).contains(&imm));
         let (tmp, _) = (self.regs[rs1] as i64).overflowing_add(imm);
         let tmp = (tmp as u64) & 0xfffffffffffffffe;
         assert_eq!(tmp % 4, 0, "instruction-address-misaligned");
         self.regs[rd] = self.pc + 4;
         self.pc = tmp;
-        self.virt.as_mut().map(|v| v.pc = v.vpc_map.get(self.pc));
+        if let Some(v) = self.virt.as_mut() {
+            v.pc = v.vpc_map.get(self.pc);
+        }
     }
 
     // #### System
@@ -317,8 +345,10 @@ impl<M: Memory> Emulator<u64, M> {
                 panic!("Unimplemented ecall {}", self.regs[17]);
             }
         }
-        self.pc = self.pc + 4;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        self.pc += 4;
+        if let Some(v) = self.virt.as_mut() {
+            v.pc += 1;
+        }
     }
 
     // #### Jolt Virtual
@@ -327,51 +357,54 @@ impl<M: Memory> Emulator<u64, M> {
     // unsupported.
 
     pub fn v_assert_ltu(&mut self, rs1: usize, rs2: usize) {
+        let v = self.virt.as_mut().expect("virtual extension");
         assert!(
             self.regs[rs1] < self.regs[rs2],
             "{} >= {}",
             self.regs[rs1],
             self.regs[rs2]
         );
-        self.virt.as_mut().map(|v| v.pc += 1).unwrap();
+        v.pc += 1;
     }
     pub fn v_assert_lte(&mut self, rs1: usize, rs2: usize) {
+        let v = self.virt.as_mut().expect("virtual extension");
         assert!(
             self.regs[rs1] <= self.regs[rs2],
             "{} > {}",
             self.regs[rs1],
             self.regs[rs2]
         );
-        self.virt.as_mut().map(|v| v.pc += 1).unwrap();
+        v.pc += 1;
     }
     pub fn v_assert_eq(&mut self, rs1: usize, rs2: usize) {
+        let v = self.virt.as_mut().expect("virtual extension");
         assert!(
             self.regs[rs1] == self.regs[rs2],
             "{} != {}",
             self.regs[rs1],
             self.regs[rs2]
         );
-        self.virt.as_mut().map(|v| v.pc += 1).unwrap();
+        v.pc += 1;
     }
     pub fn v_advice(&mut self, rd: usize) {
-        let mut advice = 0;
-        self.virt.as_mut().map(|v| {
-            // This vector is filled in the fetch step when virt is enabled.
-            advice = v.advices.pop().unwrap();
-            v.last_advice = Some(advice);
-        });
+        let v = self.virt.as_mut().expect("virtual extension");
+        // This vector is filled in the fetch step when virt is enabled.
+        let advice = v.advices.pop().unwrap();
+        v.last_advice = Some(advice);
         self.regs[rd] = advice;
-        self.virt.as_mut().map(|v| v.pc += 1).unwrap();
+        v.pc += 1;
     }
     pub fn v_add(&mut self, rd: usize, rs1: usize, rs2: usize) {
+        let v = self.virt.as_mut().expect("virtual extension");
         let (result, _) = self.regs[rs1].overflowing_add(self.regs[rs2]);
         self.regs[rd] = result;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        v.pc += 1;
     }
     pub fn v_mul(&mut self, rd: usize, rs1: usize, rs2: usize) {
+        let v = self.virt.as_mut().expect("virtual extension");
         let (result, _) = self.regs[rs1].overflowing_mul(self.regs[rs2]);
         self.regs[rd] = result;
-        self.virt.as_mut().map(|v| v.pc += 1);
+        v.pc += 1;
     }
 }
 

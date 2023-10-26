@@ -30,7 +30,7 @@ impl<F: PrimeField> ToLeBits for F {
     }
 }
 
-///! Variable type for MLE expressions
+/// Variable type for MLE expressions
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Bit {
     pub var: usize,
@@ -48,7 +48,7 @@ impl Display for Bit {
     }
 }
 
-///! Variable type for Combine Lookup expressions
+/// Variable type for Combine Lookup expressions
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TableEval {
     pub table: &'static str,
@@ -70,7 +70,7 @@ struct LookupTables<F: PrimeField> {
 
 fn f_pow<F: Arithmetic>(base: usize, exp: usize) -> F {
     let (result, overflow) = (base as u128).overflowing_pow(exp as u32);
-    assert_eq!(overflow, false);
+    assert!(!overflow);
     F::from(result)
 }
 
@@ -336,7 +336,7 @@ impl<F: PrimeField> LookupTables<F> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct OpFlags {
     first_rs2: bool,
     second_imm: bool,
@@ -353,27 +353,6 @@ pub struct OpFlags {
     is_assertion_false: bool,
     is_assertion_true: bool,
     is_positive: bool,
-}
-
-impl Default for OpFlags {
-    fn default() -> Self {
-        OpFlags {
-            first_rs2: false,
-            second_imm: false,
-            load: false,
-            store: false,
-            jump: false,
-            branch: false,
-            update_rd: false,
-            add: false,
-            sub: false,
-            mult: false,
-            non_deterministic: false,
-            is_assertion_false: false,
-            is_assertion_true: false,
-            is_positive: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -445,15 +424,15 @@ impl From<Instruction> for JoltInstruction {
             }
             Opcode::Beq => {
                 opflags.branch = true;
-                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+                opflags.is_positive = inst.imm >= 0;
             }
             Opcode::Jal => {
                 opflags.jump = true;
-                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+                opflags.is_positive = inst.imm >= 0;
             }
             Opcode::Jalr => {
                 opflags.jump = true;
-                opflags.is_positive = if inst.imm >= 0 { true } else { false };
+                opflags.is_positive = inst.imm >= 0;
             }
             Opcode::Ecall => {}
             Opcode::Virtual(vop) => todo!(),
@@ -483,7 +462,7 @@ impl<F: From<u64>> From<GenericStep<u64, Instruction>> for GenericStep<F, JoltIn
             regs: step.regs.into_f(),
             mem_ops: step.mem_ops,
             mem_t: step.mem_t,
-            advice: step.advice.into(),
+            advice: step.advice,
         }
     }
 }
@@ -514,7 +493,7 @@ impl<F: PrimeField> Simulator<F> {
         let inst = &step.inst;
         // Ref: Jolt 5.5
         // No lookup required
-        assert_eq!(step_next.regs[inst.rd], F::from(inst.imm as u64));
+        assert_eq!(step_next.regs[inst.rd], F::from(inst.imm));
         assert_eq!(step_next.pc, step.pc + F::from(4u32));
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
@@ -524,7 +503,7 @@ impl<F: PrimeField> Simulator<F> {
         let inst = &step.inst;
         // Ref: Jolt 5.2 (Same as ADD)
         // Index. z = x + y over the native field
-        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
+        let z = step.regs[inst.rs1] + F::from(inst.imm);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
@@ -540,7 +519,7 @@ impl<F: PrimeField> Simulator<F> {
         let inst = &step.inst;
         // Ref: Jolt 5.8 (Sum is done as in Branch instructions)
         // Index. z = x + y over the native field
-        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
+        let z = step.regs[inst.rs1] + F::from(inst.imm);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let addr = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         let mut read_value = F::zero();
@@ -560,7 +539,7 @@ impl<F: PrimeField> Simulator<F> {
         let inst = &step.inst;
         // Ref: Jolt 5.8 (Sum is done as in Branch instructions)
         // Index. z = x + y over the native field
-        let z = step.regs[inst.rs1] + F::from(inst.imm as u64);
+        let z = step.regs[inst.rs1] + F::from(inst.imm);
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let addr = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         let mut write_value = F::zero();

@@ -283,9 +283,7 @@ where
 
 impl<F: PrimeField, V: Var + Display> Display for Expr<F, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fmt_ascii(f, &mut |f: &mut fmt::Formatter<'_>, v: &V| {
-            write!(f, "{}", v)
-        })
+        self.fmt_ascii(f, &|f: &mut fmt::Formatter<'_>, v: &V| write!(f, "{}", v))
     }
 }
 
@@ -407,7 +405,7 @@ impl<F: PrimeField, V: Var + Display> Display for ExprTerms<F, V> {
                 }
             }
             for (j, var) in term.vars.iter().enumerate() {
-                if j != 0 || (j == 0 && !term.coeff.is_one()) {
+                if j != 0 || !term.coeff.is_one() {
                     write!(f, "*")?;
                 }
                 write!(f, "{}", var.0)?;
@@ -435,17 +433,21 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
                     let (lhs, rhs) = (term_lhs.vars.get(lhs_i), term_rhs.vars.get(rhs_i));
                     match (lhs, rhs) {
                         (Some((lhs_var, lhs_exp)), Some((rhs_var, rhs_exp))) => {
-                            if lhs_var < rhs_var {
-                                lhs_i += 1;
-                                vars.push((lhs_var.clone(), *lhs_exp));
-                            } else if rhs_var < lhs_var {
-                                rhs_i += 1;
-                                vars.push((rhs_var.clone(), *rhs_exp));
-                            } else {
-                                // Merge
-                                lhs_i += 1;
-                                rhs_i += 1;
-                                vars.push((lhs_var.clone(), *lhs_exp + *rhs_exp));
+                            match lhs_var.cmp(rhs_var) {
+                                Ordering::Less => {
+                                    lhs_i += 1;
+                                    vars.push((lhs_var.clone(), *lhs_exp));
+                                }
+                                Ordering::Greater => {
+                                    rhs_i += 1;
+                                    vars.push((rhs_var.clone(), *rhs_exp));
+                                }
+                                Ordering::Equal => {
+                                    // Merge
+                                    lhs_i += 1;
+                                    rhs_i += 1;
+                                    vars.push((lhs_var.clone(), *lhs_exp + *rhs_exp));
+                                }
                             }
                         }
                         (Some(lhs), None) => {
@@ -479,11 +481,11 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
                 terms
             }
             Sum(xs) => {
-                let terms = xs.iter().map(|x: &Expr<F, V>| x._normalize()).flatten();
+                let terms = xs.iter().flat_map(|x: &Expr<F, V>| x._normalize());
                 let mut sum_const = F::zero();
                 let mut sum_terms = Vec::new();
                 for Term { coeff, vars } in terms {
-                    if vars.len() == 0 {
+                    if vars.is_empty() {
                         sum_const += coeff
                     } else {
                         sum_terms.push(Term { coeff, vars });
@@ -500,7 +502,7 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
                 terms
             }
             Mul(xs) => {
-                let mut terms2 = xs.into_iter().map(|x| x._normalize());
+                let mut terms2 = xs.iter().map(|x| x._normalize());
                 if let Some(mut terms) = terms2.next() {
                     for terms_next in terms2 {
                         terms = Self::_mul2_normalize(terms, terms_next);
@@ -512,7 +514,7 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
             }
             Pow(e, f) => {
                 let pow_terms = e._normalize();
-                if pow_terms.len() == 1 && pow_terms[0].vars.len() == 0 {
+                if pow_terms.len() == 1 && pow_terms[0].vars.is_empty() {
                     vec![Term {
                         coeff: pow_terms[0].coeff.pow([*f as u64, 0, 0, 0]),
                         vars: vec![],
