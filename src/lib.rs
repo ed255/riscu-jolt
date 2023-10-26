@@ -11,11 +11,23 @@ use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
 
 const REG_SP: usize = 2;
+// First virtual register
+const REG_V0: usize = 32;
+const NUM_VIRT_REGS: usize = 4;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Registers<T> {
-    r: [T; 32],
+    r: [T; 32 + NUM_VIRT_REGS],
     zero: T,
+}
+
+impl<T: Default> Default for Registers<T> {
+    fn default() -> Self {
+        Self {
+            r: [0; 32 + NUM_VIRT_REGS].map(|_| T::default()),
+            zero: T::default(),
+        }
+    }
 }
 
 impl Registers<u64> {
@@ -61,6 +73,17 @@ pub struct MemOp {
 }
 
 #[derive(Default, Debug, Clone, Copy)]
+pub enum VirtualOpcode {
+    AssertLtu,
+    AssertLte,
+    AssertEq,
+    #[default]
+    Advice,
+    Mul,
+    Add,
+}
+
+#[derive(Default, Debug, Clone, Copy)]
 pub enum Opcode {
     // RISC-U supported opcodes
     Lui,
@@ -78,6 +101,8 @@ pub enum Opcode {
     Jal,
     Jalr,
     Ecall,
+    // Virtual
+    Virtual(VirtualOpcode),
 }
 
 impl Display for Opcode {
@@ -110,8 +135,10 @@ impl Instruction {
 #[derive(Debug)]
 pub struct Step<T, I> {
     pub pc: T,
+    pub vpc: T,
     pub inst: I,
     pub regs: Registers<T>,
     pub mem_t: u64,
     pub mem_ops: Vec<MemOp>,
+    pub advice: u64,
 }

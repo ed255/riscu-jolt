@@ -456,6 +456,7 @@ impl From<Instruction> for JoltInstruction {
                 opflags.is_positive = if inst.imm >= 0 { true } else { false };
             }
             Opcode::Ecall => {}
+            Opcode::Virtual(vop) => todo!(),
         };
         let imm = if opflags.branch & !opflags.is_positive {
             inst.imm.unsigned_abs()
@@ -477,10 +478,12 @@ impl<F: From<u64>> From<GenericStep<u64, Instruction>> for GenericStep<F, JoltIn
     fn from(step: GenericStep<u64, Instruction>) -> Self {
         Step {
             pc: F::from(step.pc),
+            vpc: F::from(step.vpc),
             inst: step.inst.into(),
             regs: step.regs.into_f(),
             mem_ops: step.mem_ops,
             mem_t: step.mem_t,
+            advice: step.advice.into(),
         }
     }
 }

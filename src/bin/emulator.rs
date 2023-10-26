@@ -19,6 +19,8 @@ USAGE:
 
 OPTIONS:
   --debug NUMBER       Debug level
+  --sim                Enable verification of the simulator
+  --virt               Enable Jolt virtual extension
 
 ARGS:
   <ELF_PATH>
@@ -27,6 +29,7 @@ ARGS:
 #[derive(Debug)]
 struct AppArgs {
     simulate: bool,
+    virt: bool,
     debug: usize,
     elf_path: std::path::PathBuf,
 }
@@ -39,6 +42,7 @@ fn main() -> Result<(), pico_args::Error> {
     }
     let args = AppArgs {
         simulate: pargs.contains("--sim"),
+        virt: pargs.contains("--virt"),
         debug: pargs.opt_value_from_str("--debug")?.unwrap_or(0),
         elf_path: pargs.free_from_str()?,
     };
@@ -52,7 +56,7 @@ fn main() -> Result<(), pico_args::Error> {
     let file = ElfBytes::<LittleEndian>::minimal_parse(slice).expect("Open test1");
     // 1 MiB memory
     let mem = RiscvPkMemoryMap::new_load_from_elf(1 * 1024 * 1024, &file);
-    let mut emu = Emulator::<u64, _>::new_tracer(mem);
+    let mut emu = Emulator::<u64, _>::new_tracer(mem, args.virt);
     let mut t: u64 = 0;
     loop {
         if args.debug >= 1 {
@@ -68,10 +72,12 @@ fn main() -> Result<(), pico_args::Error> {
         if args.simulate {
             let step_next = EmuStep {
                 pc: emu.pc,
+                vpc: emu.virt.as_ref().map(|v| v.pc).unwrap_or(0),
                 inst: Instruction::default(),
                 regs: emu.regs.clone(),
                 mem_ops: Vec::new(),
                 mem_t: emu.mem.t,
+                advice: 0,
             };
             let step: JoltStep<Fr> = step.into();
             let step_next: JoltStep<Fr> = step_next.into();
@@ -93,6 +99,7 @@ fn main() -> Result<(), pico_args::Error> {
                 Jal => Simulator::t_jal(&step, &step_next),
                 Jalr => Simulator::t_jalr(&step, &step_next),
                 Ecall => Simulator::t_ecall(&step, &step_next),
+                Virtual(_vop) => todo!(),
             }
         }
         t += 1;
