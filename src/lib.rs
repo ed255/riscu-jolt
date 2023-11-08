@@ -5,7 +5,7 @@
 #![allow(unused_variables)] // TODO: Remove this in the future
 pub mod emulator;
 mod expr;
-pub mod prover;
+// pub mod prover;
 pub mod simulator;
 #[cfg(test)]
 mod tests;
