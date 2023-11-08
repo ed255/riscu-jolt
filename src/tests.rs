@@ -6,8 +6,8 @@ use crate::simulator::{JoltInstruction, Simulator};
 use crate::Step as GenericStep;
 use crate::{Instruction, Opcode};
 
-use ark_bn254::fr::Fr;
-use ark_ff::PrimeField;
+use ff::PrimeField;
+use halo2_curves::bn256::Fr;
 
 type Emulator = GenericEmulator<u64, MemoryTracer<NoMem>>;
 type EmuStep<F> = GenericStep<F, Instruction>;

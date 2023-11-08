@@ -1,4 +1,5 @@
-use ark_ff::{biginteger::BigInteger, One, PrimeField, Zero};
+use crate::utils::{into_bigint, num_bits};
+use ff::PrimeField;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
 use std::{
     cmp::{Eq, Ord, Ordering, PartialEq},
@@ -8,52 +9,67 @@ use std::{
 };
 
 pub trait Arithmetic:
-    // 'static
-    Clone
-    + Debug
-    + Display
+    Sized
+    // + Eq
+    // + Copy
+    + Clone
     + Default
     // + Send
     // + Sync
-    // + Eq
-    + Zero
-    + One
+    + fmt::Debug
+    // + 'static
+    // + ConditionallySelectable
+    // + ConstantTimeEq
     + Neg<Output = Self>
-    // + Hash
-    + Add<Self, Output = Self>
-    + Sub<Self, Output = Self>
-    + Mul<Self, Output = Self>
-    // + Div<Self, Output = Self>
-    + AddAssign<Self>
-    // + SubAssign<Self>
-    + MulAssign<Self>
-    // + DivAssign<Self>
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    // + Sum
+    // + Product
     + for<'a> Add<&'a Self, Output = Self>
     + for<'a> Sub<&'a Self, Output = Self>
     + for<'a> Mul<&'a Self, Output = Self>
-    // + for<'a> Div<&'a Self, Output = Self>
+    // + for<'a> Sum<&'a Self>
+    // + for<'a> Product<&'a Self>
+    + AddAssign
+    // + SubAssign
+    + MulAssign
     // + for<'a> AddAssign<&'a Self>
     // + for<'a> SubAssign<&'a Self>
     // + for<'a> MulAssign<&'a Self>
-    // + for<'a> DivAssign<&'a Self>
-    // + for<'a> Add<&'a mut Self, Output = Self>
-    // + for<'a> Sub<&'a mut Self, Output = Self>
-    // + for<'a> Mul<&'a mut Self, Output = Self>
-    // + for<'a> Div<&'a mut Self, Output = Self>
-    // + for<'a> AddAssign<&'a mut Self>
-    // + for<'a> SubAssign<&'a mut Self>
-    // + for<'a> MulAssign<&'a mut Self>
-    // + for<'a> DivAssign<&'a mut Self>
-    + From<u128>
     + From<u64>
-    // + From<u32>
-    // + From<u16>
-    // + From<u8>
-    // + From<bool>
 {
+    fn zero() -> Self;
+    fn one() -> Self;
+
+    /// Doubles this element.
+    #[must_use]
+    fn double(&self) -> Self;
+
+    fn from_u128(v: u128) -> Self {
+        let lower = v as u64;
+        let upper = (v >> 64) as u64;
+        let mut tmp = Self::from(upper);
+        for _ in 0..64 {
+            tmp = tmp.double();
+        }
+        tmp + Self::from(lower)
+    }
 }
 
-impl<T: PrimeField> Arithmetic for T {}
+impl<T: PrimeField> Arithmetic for T {
+    fn one() -> Self {
+        T::ONE
+    }
+
+    fn zero() -> Self {
+        T::ZERO
+    }
+
+    fn double(&self) -> Self {
+        T::double(self)
+    }
+}
 
 pub trait Var: Clone + Debug + PartialEq + Eq + Hash + Ord + Display {}
 
@@ -72,7 +88,7 @@ pub enum Expr<F: PrimeField, V: Var> {
 
 impl<F: PrimeField, V: Var> Default for Expr<F, V> {
     fn default() -> Self {
-        Self::Const(F::zero())
+        Self::Const(F::ZERO)
     }
 }
 
@@ -84,37 +100,31 @@ impl<F: PrimeField, V: Var> From<u64> for Expr<F, V> {
 
 impl<F: PrimeField, V: Var> From<u128> for Expr<F, V> {
     fn from(c: u128) -> Self {
-        Self::Const(F::from(c))
+        Self::Const(F::from_u128(c))
     }
 }
 
-impl<F: PrimeField, V: Var> Zero for Expr<F, V> {
+impl<F: PrimeField, V: Var> Arithmetic for Expr<F, V> {
     fn zero() -> Self {
-        Self::Const(F::zero())
+        Self::Const(F::ZERO)
     }
 
-    fn is_zero(&self) -> bool {
-        match self {
-            Self::Const(c) => c.is_zero(),
-            _ => false,
-        }
-    }
-}
-
-impl<F: PrimeField, V: Var> One for Expr<F, V> {
     fn one() -> Self {
-        Self::Const(F::one())
+        Self::Const(F::ONE)
     }
 
-    fn is_one(&self) -> bool {
+    fn double(&self) -> Self {
+        use Expr::*;
         match self {
-            Self::Const(c) => c.is_one(),
-            _ => false,
+            Mul(xs) => {
+                let mut new_xs = xs.clone();
+                new_xs.push(Const(F::from(2)));
+                Mul(new_xs)
+            }
+            e => Mul(vec![e.clone(), Const(F::from(2))]),
         }
     }
 }
-
-impl<F: PrimeField, V: Var> Arithmetic for Expr<F, V> {}
 
 impl<F: PrimeField, V: Var> Add for Expr<F, V> {
     type Output = Self;
@@ -288,12 +298,12 @@ impl<F: PrimeField, V: Var + Display> Display for Expr<F, V> {
 }
 
 pub(crate) fn fmt_f<W: Write, F: PrimeField>(f: &mut W, c: &F) -> fmt::Result {
-    let c_bi = c.into_bigint();
-    let c_bits = c_bi.num_bits();
+    let c_bi = into_bigint(c);
+    let c_bits = num_bits(c);
     let pow2 = if c_bits == 0 {
         F::one()
     } else {
-        F::from(2u64).pow([c_bits as u64 - 1, 0, 0, 0])
+        F::from(2u64).pow([c_bits - 1, 0, 0, 0])
     };
     if c_bits >= 8 && c == &pow2 {
         write!(f, "2^{}", c_bits - 1)
@@ -306,6 +316,20 @@ pub(crate) fn fmt_f<W: Write, F: PrimeField>(f: &mut W, c: &F) -> fmt::Result {
 }
 
 impl<F: PrimeField, V: Var> Expr<F, V> {
+    fn is_zero(&self) -> bool {
+        match self {
+            Self::Const(c) => c.is_zero().into(),
+            _ => false,
+        }
+    }
+
+    fn is_one(&self) -> bool {
+        match self {
+            Self::Const(c) => c.ct_eq(&F::ONE).into(),
+            _ => false,
+        }
+    }
+
     // sumatory terminal
     fn is_terminal(&self) -> bool {
         matches!(self, Expr::Const(_) | Expr::Var(_) | Expr::Pow(_, _))
@@ -394,18 +418,18 @@ impl<F: PrimeField, V: Var + Display> Display for ExprTerms<F, V> {
         let neg = F::zero() - F::one();
         for (i, term) in self.0.iter().enumerate() {
             let neg_coeff = term.coeff * neg;
-            if (neg_coeff).into_bigint().num_bits() < 100 {
-                write!(f, " - {}", neg_coeff)?;
+            if num_bits(&neg_coeff) < 100 {
+                write!(f, " - {:?}", neg_coeff)?;
             } else {
                 if i != 0 {
                     write!(f, " + ")?;
                 }
-                if !term.coeff.is_one() {
-                    write!(f, "{}", term.coeff)?;
+                if !term.coeff.eq(&F::ONE) {
+                    write!(f, "{:?}", term.coeff)?;
                 }
             }
             for (j, var) in term.vars.iter().enumerate() {
-                if j != 0 || !term.coeff.is_one() {
+                if j != 0 || !term.coeff.eq(&F::ONE) {
                     write!(f, "*")?;
                 }
                 write!(f, "{}", var.0)?;
@@ -473,7 +497,7 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
     fn _normalize(&self) -> Vec<Term<F, V>> {
         use Expr::*;
         // p-1 == -1
-        let p_1 = F::zero() - F::one();
+        let p_1 = F::ZERO - F::ONE;
         match self {
             Neg(e) => {
                 let mut terms = e._normalize();
@@ -482,7 +506,7 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
             }
             Sum(xs) => {
                 let terms = xs.iter().flat_map(|x: &Expr<F, V>| x._normalize());
-                let mut sum_const = F::zero();
+                let mut sum_const = F::ZERO;
                 let mut sum_terms = Vec::new();
                 for Term { coeff, vars } in terms {
                     if vars.is_empty() {
@@ -492,7 +516,7 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
                     }
                 }
                 let mut terms = Vec::new();
-                if !sum_const.is_zero() {
+                if !bool::from(sum_const.is_zero()) {
                     terms.push(Term {
                         coeff: sum_const,
                         vars: vec![],
@@ -528,7 +552,7 @@ impl<F: PrimeField, V: Var> Expr<F, V> {
                 }
             }
             Var(v) => vec![Term {
-                coeff: F::one(),
+                coeff: F::ZERO,
                 vars: vec![(v.clone(), 1)],
             }],
             Const(c) => vec![Term {

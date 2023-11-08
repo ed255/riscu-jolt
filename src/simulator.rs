@@ -4,12 +4,15 @@
 
 use crate::expr::Arithmetic;
 use crate::expr::Var;
+use crate::utils::num_bits;
 use crate::Registers;
 use crate::{Instruction, Opcode, Step as GenericStep, RW};
 
-use ark_ff::{biginteger::BigInteger, PrimeField};
+use itertools::Itertools;
 use std::fmt::{self, Display};
 use std::marker::PhantomData;
+
+use ff::PrimeField;
 
 type Step<F> = GenericStep<F, JoltInstruction>;
 
@@ -22,11 +25,19 @@ trait ToLeBits {
 impl<F: PrimeField> ToLeBits for F {
     type T = F;
     fn to_le_bits(&self) -> Vec<Self::T> {
-        self.into_bigint()
-            .to_bits_le()
+        self.to_repr()
+            .as_ref()
             .iter()
-            .map(|bit| F::from(*bit))
-            .collect()
+            .flat_map(|byte| {
+                let value = u8::from_le(*byte);
+                let mut bits = vec![];
+                for i in 0..8 {
+                    let mask = 1 << i;
+                    bits.push(F::from((value & mask > 0) as u64));
+                }
+                bits
+            })
+            .collect_vec()
     }
 }
 
@@ -71,7 +82,7 @@ struct LookupTables<F: PrimeField> {
 fn f_pow<F: Arithmetic>(base: usize, exp: usize) -> F {
     let (result, overflow) = (base as u128).overflowing_pow(exp as u32);
     assert!(!overflow);
-    F::from(result)
+    F::from_u128(result)
 }
 
 #[derive(Default)]
@@ -226,7 +237,7 @@ impl<F: PrimeField> LookupTables<F> {
     // the overflow bit after an addition.
     // From this we can build FullTable W+1_to_W, W*2_to_W, etc.
     fn zero_upper_bits(src_bits_len: usize, n_bits: usize, chunk_len: usize, src: F) -> F {
-        assert!(src.into_bigint().num_bits() as usize <= src_bits_len);
+        assert!(num_bits(&src) as usize <= src_bits_len);
         let src_bits = &src.to_le_bits()[..src_bits_len];
         // NOTE: If cutoff = 0, then we only need `range_full` and `range_zeros` subtables.
         let cutoff = n_bits % chunk_len;
@@ -252,7 +263,7 @@ impl<F: PrimeField> LookupTables<F> {
         chunk_len: usize,
         src: F,
     ) -> F {
-        assert!(src.into_bigint().num_bits() as usize <= src_bits_len);
+        assert!(num_bits(&src) as usize <= src_bits_len);
         // Sanity check to make sure that the chunk where we set the 0th bit to 0 and the chunk
         // where we do range_zero_upper are not the same.
         assert!(chunk_len <= src_bits_len);
@@ -277,7 +288,7 @@ impl<F: PrimeField> LookupTables<F> {
     }
     // Range behaves like the identity from 0 to 2^`n_bits` and as the zero function onwards
     fn range_nbits(src_bits_len: usize, n_bits: usize, c: usize, src: F) -> F {
-        assert!(src.into_bigint().num_bits() as usize <= src_bits_len);
+        assert!(num_bits(&src) as usize <= src_bits_len);
         let chunk_len = src_bits_len / c;
         let src_bits = src.to_le_bits();
         // NOTE: If cutoff = 0, then we only need `range_full` and `range_zeros` subtables.
@@ -303,7 +314,7 @@ impl<F: PrimeField> LookupTables<F> {
     // Ref Jolt 4.2.1
     fn eq(w: usize, c: usize, x_y: F) -> F {
         // x||y in {0, 1}^{2*W}
-        assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
+        assert!(num_bits(&x_y) as usize <= 2 * w);
         let x_y_bits = x_y.to_le_bits();
         let x = &x_y_bits[0..w];
         let y = &x_y_bits[w..2 * w];
@@ -321,7 +332,7 @@ impl<F: PrimeField> LookupTables<F> {
     // Ref Jolt 4.2.2
     fn ltu(w: usize, c: usize, x_y: F) -> F {
         // x||y in {0, 1}^{2*W}
-        assert!(x_y.into_bigint().num_bits() as usize <= 2 * w);
+        assert!(num_bits(&x_y) as usize <= 2 * w);
         let x_y_bits = x_y.to_le_bits();
         let x = &x_y_bits[0..w];
         let y = &x_y_bits[w..2 * w];
@@ -494,7 +505,7 @@ impl<F: PrimeField> Simulator<F> {
         // Ref: Jolt 5.5
         // No lookup required
         assert_eq!(step_next.regs[inst.rd], F::from(inst.imm));
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
     }
@@ -507,7 +518,7 @@ impl<F: PrimeField> Simulator<F> {
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
     }
@@ -530,7 +541,7 @@ impl<F: PrimeField> Simulator<F> {
             read_value += F::from(step.mem_ops[i].value as u64) * f_pow::<F>(2, 8 * i);
         }
         assert_eq!(step_next.regs[inst.rd], read_value);
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 8);
         assert_eq!(step_next.mem_t, step.mem_t + 8);
     }
@@ -550,7 +561,7 @@ impl<F: PrimeField> Simulator<F> {
             write_value += F::from(step.mem_ops[i].value as u64) * f_pow::<F>(2, 8 * i);
         }
         assert_eq!(step.regs[inst.rs2], write_value);
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 8);
         assert_eq!(step_next.mem_t, step.mem_t + 8);
     }
@@ -566,7 +577,7 @@ impl<F: PrimeField> Simulator<F> {
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
     }
@@ -579,7 +590,7 @@ impl<F: PrimeField> Simulator<F> {
         // Lookup. z has W+1 bits.  Take lowest W bits via lookup table
         let result = LookupTables::zero_upper_bits(W + 1, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
     }
@@ -593,7 +604,7 @@ impl<F: PrimeField> Simulator<F> {
         // let result = LookupTables::wx2_to_w(W, z);
         let result = LookupTables::zero_upper_bits(2 * W, W, W / C, z);
         assert_eq!(step_next.regs[inst.rd], result);
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
     }
@@ -632,7 +643,7 @@ impl<F: PrimeField> Simulator<F> {
         // Lookup
         let result = LookupTables::ltu(W, C, z);
         assert_eq!(step_next.regs[inst.rd], result);
-        assert_eq!(step_next.pc, step.pc + F::from(4u32));
+        assert_eq!(step_next.pc, step.pc + F::from(4u64));
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
     }
@@ -660,7 +671,7 @@ impl<F: PrimeField> Simulator<F> {
                         -imm
                     }
                 } else {
-                    F::from(4u32)
+                    F::from(4u64)
                 }
         );
         assert_eq!(step.mem_ops.len(), 0);
@@ -677,7 +688,7 @@ impl<F: PrimeField> Simulator<F> {
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
         // useful.  The value stored in rd is the old pc + 4, so that we can return back after the
         // jump.
-        assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u32));
+        assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u64));
         assert_eq!(step_next.pc, result);
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
@@ -696,7 +707,7 @@ impl<F: PrimeField> Simulator<F> {
         // Errata: Jolt says that the value stored in rd is the new pc + 4, but that wouldn't be
         // useful.  The value stored in rd is the old pc + 4, so that we can return back after the
         // jump.
-        assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u32));
+        assert_eq!(step_next.regs[inst.rd], step.pc + F::from(4u64));
         assert_eq!(step_next.pc, result);
         assert_eq!(step.mem_ops.len(), 0);
         assert_eq!(step_next.mem_t, step.mem_t);
