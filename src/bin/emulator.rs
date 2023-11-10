@@ -5,7 +5,7 @@ use riscu::emulator::{memory::Memory, memory::RiscvPkMemoryMap, Emulator};
 use riscu::simulator::{JoltInstruction, Simulator};
 use riscu::{Instruction, Opcode, Step as GenericStep};
 
-use ark_bn254::fr::Fr;
+use halo2_curves::bn256::Fr;
 
 type JoltStep<F> = GenericStep<F, JoltInstruction>;
 type EmuStep = GenericStep<u64, Instruction>;

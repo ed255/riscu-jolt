@@ -6,7 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ark-ff = "0.4"
-ark-bn254 = "0.4"
+num-bigint = "0.4.3"
+itertools = "0.10.5"
+ff = "0.13.0"
+halo2_curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "0.3.3", package = "halo2curves" }
 elf = "0.7.2"
 pico-args = "0.5.0"
+
+# proving system
+plonkish_backend = { git = "https://github.com/DoHoonKim8/halo2-lasso", branch = "feature/Lasso" }
