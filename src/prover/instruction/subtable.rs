@@ -92,7 +92,7 @@ impl<F: PrimeField> DecomposableTable<F> for LtuTable<F> {
             let result = F::from((lhs < rhs) as u64);
             evals_ltu.push(result);
         });
-        vec![MultilinearPolynomial::new(evals_eq), MultilinearPolynomial::new(evals_ltu)]
+        vec![MultilinearPolynomial::new(evals_ltu), MultilinearPolynomial::new(evals_eq)]
     }
 
     fn chunk_bits(&self) -> Vec<usize> {

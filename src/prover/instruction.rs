@@ -4,6 +4,7 @@ pub mod beq;
 pub mod jal;
 pub mod jalr;
 pub mod mul;
+pub mod sltu;
 pub mod sub;
 
 pub mod subtable;

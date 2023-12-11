@@ -19,6 +19,7 @@ impl<F> AddTable<F> {
         Self(PhantomData)
     }
 }
+
 /// `ADD`'s evaluation result is from its own calculation on finite field
 /// this table does range check
 /// T[z] = T_1[z_1] + T_2[z_2] * 2^8 + ... + T_8[z_8] * 2^56

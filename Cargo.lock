@@ -417,7 +417,7 @@ checksum = "8afb450f006bf6385ca15ef45d71d2288452bc3683ce2e2cacc0d18e4be60b58"
 [[package]]
 name = "plonkish_backend"
 version = "0.1.0"
-source = "git+https://github.com/DoHoonKim8/halo2-lasso?branch=feature/Lasso#6d588556e5205c70bb2784d0ab7187eea0385a9c"
+source = "git+https://github.com/DoHoonKim8/halo2-lasso?branch=feature/Lasso#a4c1c5ac9213a82eb97919d9b578c0fb9283c967"
 dependencies = [
  "bincode",
  "bitvec",

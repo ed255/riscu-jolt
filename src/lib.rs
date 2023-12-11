@@ -109,6 +109,51 @@ pub enum Opcode {
     Virtual(VirtualOpcode),
 }
 
+impl Opcode {
+    fn from_usize(value: usize) -> Self {
+        match value {
+            0 => Self::Lui,
+            1 => Self::Addi,
+            2 => Self::Ld,
+            3 => Self::Sd,
+            4 => Self::Add,
+            5 => Self::Sub,
+            6 => Self::Mul,
+            7 => Self::Divu,
+            8 => Self::Remu,
+            9 => Self::Sltu,
+            10 => Self::Beq,
+            11 => Self::Jal,
+            12 => Self::Jalr,
+            13 => Self::Ecall,
+            14 => panic!("Virtual opcode"),
+            _ => panic!("Undefined")
+        }
+    }
+}
+
+impl From<Opcode> for usize {
+    fn from(value: Opcode) -> Self {
+        match value {
+            Opcode::Lui => 0,
+            Opcode::Addi => 1,
+            Opcode::Ld => 2,
+            Opcode::Sd => 3,
+            Opcode::Add => 4,
+            Opcode::Sub => 5,
+            Opcode::Mul => 6,
+            Opcode::Divu => 7,
+            Opcode::Remu => 8,
+            Opcode::Sltu => 9,
+            Opcode::Beq => 10,
+            Opcode::Jal => 11,
+            Opcode::Jalr => 12,
+            Opcode::Ecall => 13,
+            Opcode::Virtual(_) => panic!("Cannot convert"),
+        }
+    }
+}
+
 impl Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
